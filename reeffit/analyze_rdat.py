@@ -43,7 +43,11 @@ parser.add_argument('--nomutrepeat', default=False, action='store_true', help='S
 parser.add_argument('--clipzeros', default=False, action='store_true', help='Clip data to non-zero regions')
 parser.add_argument('--postmodel', default=False, action='store_true', help='Perform SHAPE-directed modeling after analysis using the calculated hidden reactivities for each structures. Useful if the hidden reactivities do not match well with the prior structures')
 parser.add_argument('--worker', default=False, action='store_true', help='Worker mode (non-verbose, simple output). Used for MC model selection.')
+<<<<<<< HEAD
 parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
+=======
+parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option.')
+>>>>>>> fb55afe054ce17d7dc600e423549978bab9ea1e7
 parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
 parser.add_argument('--detailedplots', default=False, action='store_true', help='Plots log-likelihood trace, all predicted data vs real data separately, and comparison plots between initial and final structure weights')
 parser.add_argument('--nonormalization', default=False, action='store_true', help='Do not perform box-plot normalization of the data. Useful for MAP-seq datasets')
@@ -295,7 +299,7 @@ def prepare_model_select_simulation_structure_file(idx, nsim):
 def prepare_worker_file(idx, nsim, simfilename):
     wf = open('%sworker%s.txt' % (args.outprefix, idx), 'w')
     general_options = '%s %sworker_%s --worker --structfile=%s' % (os.path.abspath(args.rdatfile.name), args.outprefix, idx, os.path.abspath(simfilename))
-    carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor', 
+    carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
             'bootstrap', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
             'nomutrepeat', 'clipzeros', 'kdfile', 'nonormalization', 'priorweights', 'njobs', 'csize']
     for opt in carry_on_options:
@@ -505,7 +509,7 @@ for b_iter in xrange(args.bootstrap + 1):
 
             figure(1)
             clf()
-            plot_mutxpos_image(data_pred[i:i+args.splitplots], sequence, seqpos_iter, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)], 
+            plot_mutxpos_image(data_pred[i:i+args.splitplots], sequence, seqpos_iter, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)],
                     #missed_indices=missed_indices, contact_sites=fa.contact_sites, weights=W_fa[i:i+args.splitplots,:])
                     missed_indices=missed_indices, weights=W_fa[i:i+args.splitplots,:])
             savefig('%s/data_pred_annotated%s.png' % (prefix,isuffix), dpi=args.dpi)
@@ -595,7 +599,7 @@ if args.bootstrap > 0:
     """
     E_dcompile_std = E_dcompile.std(axis=2)
     E_dcompile_mean = E_dcompile.mean(axis=2)
-    
+
     r = range(data_cutoff.shape[1])
     for i, s in enumerate(selected_structures):
         f = figure(2)

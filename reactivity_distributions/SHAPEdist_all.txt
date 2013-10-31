@@ -1,0 +1,2 @@
+# Exponential parameters for all shape reactivities. Order of parameters is: location, scale
+-1.9624375789208193e-11 0.20701435043101354

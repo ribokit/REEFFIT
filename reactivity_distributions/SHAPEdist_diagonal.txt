@@ -1,0 +1,2 @@
+# Gamma parameters for diagonal elements. Order of parameters is: shape, location, scale
+0.75387291823586922 0.0017285843553101754 0.28265808639340728

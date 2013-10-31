@@ -1,0 +1,2 @@
+#! /bin/bash
+$REEFFIT_HOME/reeffit/analyze_rdat.py "$@"

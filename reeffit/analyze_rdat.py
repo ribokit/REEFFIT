@@ -43,11 +43,7 @@ parser.add_argument('--nomutrepeat', default=False, action='store_true', help='S
 parser.add_argument('--clipzeros', default=False, action='store_true', help='Clip data to non-zero regions')
 parser.add_argument('--postmodel', default=False, action='store_true', help='Perform SHAPE-directed modeling after analysis using the calculated hidden reactivities for each structures. Useful if the hidden reactivities do not match well with the prior structures')
 parser.add_argument('--worker', default=False, action='store_true', help='Worker mode (non-verbose, simple output). Used for MC model selection.')
-<<<<<<< HEAD
 parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
-=======
-parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option.')
->>>>>>> fb55afe054ce17d7dc600e423549978bab9ea1e7
 parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
 parser.add_argument('--detailedplots', default=False, action='store_true', help='Plots log-likelihood trace, all predicted data vs real data separately, and comparison plots between initial and final structure weights')
 parser.add_argument('--nonormalization', default=False, action='store_true', help='Do not perform box-plot normalization of the data. Useful for MAP-seq datasets')

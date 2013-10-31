@@ -1,5 +1,5 @@
 import pdb
-import mdp
+#import mdp
 import pymc
 import joblib
 import map_analysis_utils as utils
@@ -22,7 +22,7 @@ from cvxopt import solvers
 from scipy import optimize
 from cvxopt import matrix as cvxmat
 
-# Homebrew implementation of k-medoids using a pairwise distance matrix. 
+# Homebrew implementation of k-medoids using a pairwise distance matrix.
 # I know this should be imported from some package, but I want to reduce
 # dependencies and would not want to require pycluster just for this
 def _cost(assigned_elems, medoid, distmat):
@@ -67,7 +67,7 @@ def _kmedoids(distmat, k):
                 currassignments = _assign(elems, newmedoids)
         medoids = newmedoids
         assignments = currasignments
-    return medoids, assignments 
+    return medoids, assignments
 
 # Here, the data can be one or two-dimensional
 def _structure_likelihood(struct_types, idx, data, Psi, prior_weights=None):
@@ -121,7 +121,7 @@ class MappingAnalysisMethod():
         self.c_size = c_size
         self.set_structures(structures)
         self._data = self.data
-    
+
     def set_structures(self, structures):
         # Get contact sites
         nmeas = self._origdata.shape[0]
@@ -153,7 +153,7 @@ class MappingAnalysisMethod():
                     new_struct[i] = '.'
                 new_structures.append(''.join(new_struct))
             self.structures = new_structures
-            """        
+            """
         else:
             self.structures = structures
             self.contact_sites = utils.get_contact_sites(structures, self.mutpos, nmeas, npos, self.c_size)
@@ -185,9 +185,9 @@ class MappingAnalysisMethod():
         measindices = chosenindices.values()
         print 'Chose %s indices, which were: %s' % (len(chosenindices), chosenindices)
         return chosenindices, bestclusts
- 
+
 class FAMappingAnalysis(MappingAnalysisMethod):
-    
+
     FACTOR_ESTIMATION_METHODS = ['fanalysis', 'hclust']
     MODEL_SELECT_METHODS = ['heuristic', 'bruteforce']
     def __init__(self, data, structures, sequences, wt_index=0, mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None):
@@ -198,7 +198,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         self.paired_pdf = SHAPE_paired_pdf
 
     # To perform a standard factor analysis, with normal priors
-    # We use this mainly to have a first estimate of the number 
+    # We use this mainly to have a first estimate of the number
     # structures needed before performing the real factor analysis
     def _standard_factor_analysis(self, nstructs):
         fnode = mdp.nodes.FANode(output_dim=nstructs)
@@ -227,7 +227,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         # with the same order as self.structure_clusters.key()
         self.struct_medoid_indices = [struct_medoid_indices[c] for c in self.structure_clusters]
         cluster_indices = {}
-        # TODO this is too inefficient, maybe there's a smarter way to get 
+        # TODO this is too inefficient, maybe there's a smarter way to get
         # the indices, or should we ask the function caller to provide them?
         for c, structs in structure_clusters.iteritems():
             cluster_indices[c] = [self.structures.index(s) for s in structs]
@@ -279,7 +279,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             # simulation step of the EM algorithm for Factor analysis using our custom priors.
             est_nstructs = len(maxmedoids)
 
-           
+
             # Now, we will start to explore the model space by switching structures WITHIN A STRUCTURE CLUSTER using two iterations
             # of the EM Factor analysis. These two iterations will give us an estimate of the rate of EM convergence per model
             # and, using our current likelihood value, we can use that as an estimate of the likelihood value that we may be
@@ -311,7 +311,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     if not skip_struct:
                         if apply_pseudoenergies:
                             energy = ss.get_structure_energies(self.sequences[j], all_struct_obj[s], mapping_data=mapping_datas[j], algorithm=algorithm)[0]
-                        else: 
+                        else:
                             energy = ss.get_structure_energies(self.sequences[j], all_struct_obj[s], algorithm=algorithm)[0]
                         if energy > 200:
                             struct_data_energies[s,j] = 200
@@ -332,7 +332,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             struct_scores = [struct_data_probs[idx,self.wt_index] for idx in all_struct_indices]
             sorted_structs = sorted(range(len(struct_scores)), key=lambda x:struct_scores[x], reverse=True)
             sorted_dbns = [self.structures[s] for s in sorted_structs]
-            
+
 
             if prior_swap:
                 print 'Looking for best structure within each cluster'
@@ -484,7 +484,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         perturbs_opt = perturbs
                         selected_structs = subset
             return selected_structs
-        
+
     def hard_EM_vars(self, idx, W, Psi_inv, struct_types, contact_sites):
         # This basically solves into a system of linear equations
         # Each entry is either a hidden reactivity or a hidden contact
@@ -589,7 +589,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     E_c__obs[j, s] = x[s]
                 else:
                     E_c__obs[j, s] = nan
- 
+
         for s in xrange(nstructs):
             for j in xrange(nmeas):
                 if contact_sites[s][j, idx]:
@@ -597,13 +597,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
         sigma_d__obs = mat(sqrt(E_ddT__obs.diagonal()))
         return mat(E_d__obs), E_ddT__obs, sigma_d__obs, E_c__obs
-                    
-                
+
+
 
 
     def soft_EM_vars(self, idx, W, Psi_inv, struct_types, contact_sites, n, burn, chosenindices, use_struct_clusters):
         # idx stands for the index of position
-        # If struture weights by cluster were specified, then we do 
+        # If struture weights by cluster were specified, then we do
         # a different prior function
         print '\nSimulating for position %s' % idx
         nstructs = len(struct_types[idx])
@@ -638,14 +638,14 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         loglike += log(self.paired_pdf(value[s]))
                         #loglike += log(normpdf(value[s], 0.1, 1))
                 return loglike
-        
-        print 'Choosing good d_0' 
-        while True: 
+
+        print 'Choosing good d_0'
+        while True:
             d_i_0 = rand(nstructs)
             logr = log([rand() for i in xrange(nstructs)]).sum()
             if d_prior_loglike(d_i_0) >= logr:
                 break
-        
+
         print 'Building contact site stochastic objects'
         contact_stochastics = {}
         for j in xrange(nmeas):
@@ -654,7 +654,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     contact_stochastics['c_%s_%s' % (j, s)] = Laplace('c_%s_%s' % (j, s), mu=contact_diff_params[0], tau=contact_diff_params[1])
                     #contact_stochastics['c_%s_%s' % (j, s)] = Cauchy('c_%s_%s' % (j, s), alpha=0.00039655433662119373, beta=0.022686230868563868)
 
-                    
+
         @stochastic
         def d_i(value=d_i_0):
             return d_prior_loglike(value)
@@ -686,7 +686,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                             plot=False)
 
         data_obs_i = MvNormal('data_obs_i', value=[self.data[chosenindices,idx]], mu=d_calc_i, tau=Psi_inv, observed=True)
-        
+
         mc = MCMC([d_i, d_calc_i, data_obs_i] + contact_stochastics.values())
         mc.use_step_method(pymc.AdaptiveMetropolis, [d_i] + contact_stochastics.values())
         mc.sample(iter=n, burn=burn)
@@ -778,7 +778,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
     def _back_calculate_perturbations(self, W, energies, perturbs):
         for j in xrange(W.shape[0]):
             # Index por "pivot" energy, which will be the lowest energy
-            # This is totally heuristic, we are assuming that the minimum energy 
+            # This is totally heuristic, we are assuming that the minimum energy
             # is the most "confident" and therefore needs no perturbation
             idx = where(energies[j,:] == energies[j,:].min())[0][0]
             perturbs[j,idx] = 0
@@ -816,7 +816,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         # Constrain the weights to be positive
         # If we were specified energies, we need to apply the lagrange multipliers
         # to constarint weights to be convex combinations and then
-        # back-calculate the perturbations. 
+        # back-calculate the perturbations.
         # Furthermore, we constrain the weights by G_factor, if available, which was calculated from G_constraint
         npos = Psi.shape[0]
         Psi_data_E_d_T = zeros([nmeas, nstructs])
@@ -905,7 +905,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
     def _calculate_MLE_std(self, W, Psi_inv, E_ddT):
         I_W = zeros(W.shape)
-        for i in xrange(Psi_inv.shape[0]): 
+        for i in xrange(Psi_inv.shape[0]):
             for j in xrange(I_W.shape[0]):
                 for s in xrange(I_W.shape[1]):
                     for sp in xrange(I_W.shape[1]):
@@ -997,7 +997,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             data = data[:,seq_indices]
             struct_types = [struct_types[i] for i in seq_indices]
             for s in xrange(len(structures)):
-                contact_sites[s] = contact_sites[s][:, seq_indices] 
+                contact_sites[s] = contact_sites[s][:, seq_indices]
         else:
             seq_indices = range(data.shape[1])
         self._restricted_contact_sites = contact_sites
@@ -1007,7 +1007,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         print 'Number of measurements: ' + str(nmeas)
         """
         Initialize the variables
-        For clarity: the model is 
+        For clarity: the model is
         data_i = W*d_i + epsilon
         epsilon ~ Normal(0, Psi)
         d_i ~ multivariate gamma mixture depending on struct_types
@@ -1049,15 +1049,15 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 if G_constraint != None:
                     for m in xrange(nmeas):
                         for p in xrange(nstructs):
-                            Wupper[m,p] = W[m,p]*exp(G_constraint/(utils.k*utils.T)) 
-                            Wlower[m,p] = W[m,p]*exp(-G_constraint/(utils.k*utils.T)) 
+                            Wupper[m,p] = W[m,p]*exp(G_constraint/(utils.k*utils.T))
+                            Wlower[m,p] = W[m,p]*exp(-G_constraint/(utils.k*utils.T))
                             if Wupper[m,p] < Wlower[m,p]:
                                 tmp = Wupper[m,p]
                                 Wupper[m,p] = Wlower[m,p]
                                 Wlower[m,p] = tmp
             else:
                 W = normal(0, sqrt(scale/(nstructs)), size=(nmeas, nstructs))
-                
+
         W_initvals = W
         print 'Finished initializing'
         # For brevity E_d = E[d | data], E_d =[E[c | data], and E_ddT = E[d*dT | data], and so on...
@@ -1091,17 +1091,17 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             data_dataT[:,:,i] = dot(data[:,i], data[:,i].T)
         for t in xrange(max_iterations):
             # E-step
-            loglike = -npos*nmeas/2.*log(2.*pi) 
+            loglike = -npos*nmeas/2.*log(2.*pi)
             if hard_em:
                 restuples = []
                 for i in xrange(npos):
                     restuples.append(self.hard_EM_vars(i, W, Psi_inv[i,:,:], struct_types, contact_sites))
- 
+
             else:
                 if n_jobs != None:
-                    def par_fun(i): 
+                    def par_fun(i):
                         return self.soft_EM_vars(i, W, Psi_inv[i,:,:], struct_types, contact_sites, nsim, nsim/5, measindices, use_struct_clusters)
-                    sys.modules[__name__].par_fun = par_fun 
+                    sys.modules[__name__].par_fun = par_fun
                     restuples = joblib.Parallel(n_jobs=n_jobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
                 else:
                     restuples = []
@@ -1197,7 +1197,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             lhood = max_loglike
         self.W, self.Psi, self.E_d, self.E_c, self.sigma_d, self.E_ddT= asarray(W_opt), asarray(Psi_opt), asarray(E_d_opt), asarray(E_c_opt), asarray(sigma_d_opt), asarray(E_ddT_opt)
-            
+
         # Calculate the standard deviation of the MLE
         # Diagonal elements of the information matrix of W are in I_W
         self.W_std = self._calculate_MLE_std(W, Psi_inv, E_ddT)
@@ -1266,7 +1266,7 @@ class FullBayesAnalysis(MappingAnalysisMethod):
             for j in xrange(len(M)):
                 M[j].value = M_opt[j,:]
             return [data_obs, D, M, Psi_diag]
-            
+
 
     def analyze(self, n=1000, burn=100, thin=1, verbose=0, inititer=5, initmethod=None, print_stats=False):
         # This is the full model
@@ -1312,7 +1312,7 @@ class FullBayesAnalysis(MappingAnalysisMethod):
         m0 = zeros([nmeas, nstructs])
         c0 = zeros([nmeas, npos])
         psidiag0 = rand(nmeas)
-        print 'Choosing good d_0s, c_0s, and m_0s' 
+        print 'Choosing good d_0s, c_0s, and m_0s'
         for j in xrange(nmeas):
             for s in xrange(nstructs):
                 m0[j,s] = rand()
@@ -1320,21 +1320,21 @@ class FullBayesAnalysis(MappingAnalysisMethod):
             for j in xrange(nmeas):
                 if self.contact_sites[j,i]:
                     c0[j,i] = SHAPE_contacts_diff_sample()
-            while True: 
+            while True:
                 d0[:,i] = rand(len(self.struct_types[i]))
                 logr = log([rand() for x in xrange(len(self.struct_types[i]))]).sum()
                 if d_prior_loglike(d0[:,i], i) >= logr:
                     break
 
         def d_calc_eval(Weights, d):
-            return dot(Weights, d) 
+            return dot(Weights, d)
 
         def Weights_eval(free_energies_perturbed=[]):
             Z = sum(exp(free_energies_perturbed/(utils.k*utils.T)))
             return exp(free_energies_perturbed/(utils.k*utils.T)) / Z
 
         @stochastic
-        def Psi_diag(value=psidiag0): 
+        def Psi_diag(value=psidiag0):
             return psidiag_loglike(value)
 
         @deterministic
@@ -1349,9 +1349,9 @@ class FullBayesAnalysis(MappingAnalysisMethod):
         Weights = [Deterministic(eval=Weights_eval, name='Weights_%s' % j, parents={'free_energies_perturbed':free_energies_perturbed[j]}, doc='weights', trace=True, verbose=1, dtype=ndarray, plot=False, cache_depth=2) for j in xrange(nmeas)]
         d_calc = [Deterministic(eval=lambda **kwargs: d_calc_eval(kwargs['Weights'], kwargs['d']), name='d_calc_%s' % i, parents={'Weights':Weights, 'd':D[i]}, doc='d_calc', trace=True, verbose=1, dtype=ndarray, plot=False, cache_depth=2) for i in xrange(npos)]
         data_obs = [MvNormal('data_obs_%s' % i, value=[self.data[:,i]], mu=d_calc[i], tau=Psi_mat, observed=True) for i in xrange(npos)]
-        print 'Finished declaring' 
+        print 'Finished declaring'
         mc = MCMC(self._initialize_mcmc_variables(initmethod, data_obs, D, M, Psi_diag, C, inititer) + [d_calc, Weights, free_energies_perturbed], \
-                   db=self.backend, dbname=self.dbname) 
+                   db=self.backend, dbname=self.dbname)
         mc.use_step_method(AdaptiveMetropolis, M)
         mc.use_step_method(AdaptiveMetropolis, D)
         mc.use_step_method(AdaptiveMetropolis, Psi_diag)

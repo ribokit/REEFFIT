@@ -187,7 +187,9 @@ class MappingAnalysisMethod():
         return chosenindices, bestclusts
  
 class FAMappingAnalysis(MappingAnalysisMethod):
-
+    
+    FACTOR_ESTIMATION_METHODS = ['fanalysis', 'hclust']
+    MODEL_SELECT_METHODS = ['heuristic', 'bruteforce']
     def __init__(self, data, structures, sequences, wt_index=0, mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None):
         MappingAnalysisMethod.__init__(self, data, structures, sequences, energies, wt_index, mutpos, c_size, seqpos_range)
         self.concentrations = concentrations
@@ -247,8 +249,12 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             self.W, self.struct_weights_by_clust = utils.calculate_weights(self.energies, clusters=cluster_indices)
 
-    def model_select(self, expected_structures=0, greedy_iter=0, expstruct_estimation='hclust', method='cluster', tol=1e-4, max_iterations=10, prior_swap=True, G_constraint=None, n_jobs=None, apply_pseudoenergies=True, algorithm='rnastructure', hard_em=False):
+    def model_select(self, expected_structures=0, greedy_iter=0, expstruct_estimation='hclust', tol=1e-4, max_iterations=10, prior_swap=True, G_constraint=None, n_jobs=None, apply_pseudoenergies=True, algorithm='rnastructure', hard_em=False, method='heuristic'):
         print 'Starting model selection'
+        if method not in FAMappingAnalysis.MODEL_SELECT_METHODS:
+            raise ValueError('Unrecognized model selection method %s' % method)
+        if expstruct_estimation not in FAMappingAnalysis.FACTOR_ESTIMATION_METHODS:
+            raise ValueError('Unrecognized cluster method %s' % expstruct_estimation)
         nstructs = len(self.structures)
         npos = self.data.shape[1]
         all_struct_indices = range(nstructs)
@@ -263,7 +269,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     print 'For %s structures, AICc is %s' % (ns, aics[ns])
                 expected_structures = aics.index(min(aics))
                 print 'Estimated %s number of structures for model' % expected_structures
-        if method == 'cluster':
+        if method == 'heuristic':
             if expstruct_estimation == 'fanalysis':
                 maxmedoids, assignments = utils.cluster_structures(self.struct_types, expected_medoids=expected_structures)
             if expstruct_estimation == 'hclust':
@@ -272,6 +278,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             # that may change as we try to add/substract. This is mainly to calculate how many iterations we have to do in the
             # simulation step of the EM algorithm for Factor analysis using our custom priors.
             est_nstructs = len(maxmedoids)
+
            
             # Now, we will start to explore the model space by switching structures WITHIN A STRUCTURE CLUSTER using two iterations
             # of the EM Factor analysis. These two iterations will give us an estimate of the rate of EM convergence per model
@@ -727,7 +734,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
         df = self.data.size - self.W.size - self.E_d.size - self.E_c[logical_not(isnan(self.E_c))].size - self.data.shape[0] - 1
         rmsea = sqrt(max((chi_sq/df - 1)/(self.data.shape[1] - 1), 0.0))
-        return chi_sq/df, rmsea
+        return chi_sq/df, rmsea, chi_sq + 2*df
 
 
     def correct_scale(self, stype='linear'):

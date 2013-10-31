@@ -43,7 +43,7 @@ parser.add_argument('--nomutrepeat', default=False, action='store_true', help='S
 parser.add_argument('--clipzeros', default=False, action='store_true', help='Clip data to non-zero regions')
 parser.add_argument('--postmodel', default=False, action='store_true', help='Perform SHAPE-directed modeling after analysis using the calculated hidden reactivities for each structures. Useful if the hidden reactivities do not match well with the prior structures')
 parser.add_argument('--worker', default=False, action='store_true', help='Worker mode (non-verbose, simple output). Used for MC model selection.')
-parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option'.)
+parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
 parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
 parser.add_argument('--detailedplots', default=False, action='store_true', help='Plots log-likelihood trace, all predicted data vs real data separately, and comparison plots between initial and final structure weights')
 parser.add_argument('--nonormalization', default=False, action='store_true', help='Do not perform box-plot normalization of the data. Useful for MAP-seq datasets')
@@ -308,7 +308,7 @@ def prepare_worker_file(idx, nsim, simfilename):
                 general_options += ' --%s=%s ' % (opt, val)
 
     for i in xrange(nsim):
-        wf.write('%s %s %s --structset=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/bin/reeffit ' + general_options, i))
+        wf.write('%s %s %s --structset=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/bin/reeffit ', general_options, i))
     return wf.name
 
 if args.modelselect != None:
@@ -326,7 +326,7 @@ if args.modelselect != None:
         print 'Finished preparing worker files, run them using your scheduler and them use compile_worker_results.py to compile the results'
         exit()
     if args.modelselect in ['heuristic']:
-        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, n_jobs=args.njobs, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, mode=args.modelselect)
+        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, n_jobs=args.njobs, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect)
         print 'Getting sequence energies'
         energies = get_free_energy_matrix(structures, mutants)
         print 'Getting cluster energies'

@@ -1,5 +1,5 @@
 import pdb
-import mdp
+#import mdp
 import pymc
 import joblib
 import map_analysis_utils as utils
@@ -289,7 +289,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             struct_data_energies = zeros([len(self.structures), self.data.shape[0]])
             mapping_datas = []
             for j in xrange(self.data.shape[0]):
-                md = mapping.MappingData(data=array(self.data[j,:]).ravel(), enforce_positives=True)
+                #md = mapping.MappingData(data=array(self.data[j,:]).ravel(), enforce_positives=True)
+                md = mapping.MappingData(data=array(self.data[j,:]).ravel())
                 mapping_datas.append(md)
                 fold_structures = ss.fold(self.sequences[j], mapping_data=mapping_datas[j], algorithm=algorithm)
                 data_structs.append(fold_structures[0].dbn)

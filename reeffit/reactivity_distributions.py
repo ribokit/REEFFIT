@@ -1,19 +1,20 @@
 from scipy.stats import gamma, laplace, expon
 from numpy.random import rand
+import os
 
-distfile = open('/home/tsuname/reeffit/analysis/SHAPEdist.txt')
+distfile = open(os.environ['REEFFIT_HOME'] + '/reactivity_distributions/SHAPEdist.txt')
 distfile.readline()
 #Read parameters for paired distribution
 pparams = [float(x) for x in distfile.readline().strip().split()]
 #Read parameters for unpaired distribution
 uparams = [float(x) for x in distfile.readline().strip().split()]
 
-distfile = open('/home/tsuname/reeffit/analysis/SHAPEdist_all.txt')
+distfile = open(os.environ['REEFFIT_HOME'] + '/reactivity_distributions/SHAPEdist_all.txt')
 #Read parameters for all reactivities distribution
 distfile.readline()
 allparams = [float(x) for x in distfile.readline().strip().split()]
 
-distfile = open('/home/tsuname/reeffit/analysis/SHAPEdist_diagonal.txt')
+distfile = open(os.environ['REEFFIT_HOME'] + '/reactivity_distributions/SHAPEdist_diagonal.txt')
 distfile.readline()
 #Read parameters for the diagonal and contact distribution
 dparams = [float(x) for x in distfile.readline().strip().split()]

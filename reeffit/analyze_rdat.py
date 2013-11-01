@@ -188,7 +188,7 @@ elif args.start != None or args.end != None:
     seqpos_end = sorted_seqpos.index(args.end) + 1
     seqpos_cutoff = sorted_seqpos[seqpos_start:seqpos_end]
     data_cutoff = data[:, seqpos_start:seqpos_end]
-    mutpos_cutoff = [pos - seqpos_start for pos in mutpos]
+    mutpos_cutoff = [[p - seqpos_start for p in pos] for pos in mutpos]
     seqpos_range = (seqpos_start, seqpos_end)
 else:
     data_cutoff = data

@@ -549,6 +549,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         def f(x):
             return ((dot(A,x) - b)**2).sum()
         solved = False
+        add_rand = False
         tries = 0
         while not solved:
             bounds = [(0.001, self.data.max())]*nstructs + [(-10,10)]*(A.shape[0] - nstructs)
@@ -561,23 +562,45 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     E_d__obs[s] = 0.001*rand()
                 else:
                     E_d__obs[s] = x[s]
+                if add_rand:
+                    E_d__obs[s] += randn()*0.01
             E_ddT__obs = dot(mat(E_d__obs).T, mat(E_d__obs))
             if (E_ddT__obs < 0).ravel().sum() > 1:
                 solved = False
             try:
                 linalg.inv(E_ddT__obs)
             except LinAlgError:
+                print 'E_ddT__obs not invertible'
                 solved = False
             if not solved:
                 # This means that we need to rescale the contact prior
                 tries += 1
+                if tries > 100:
+                    new_prior_factor = contact_prior_factor - 0.1*(tries - 100)
+                else:
+                    new_prior_factor = contact_prior_factor + 0.1*tries
+                if tries > 200:
+                    print 'Could not figure out a good contact prior'
+                    print 'Blaming E_ddT__obs singularities on data similarity'
+                    print 'Adding a bit of white noise to alleviate'
+                    for p in xrange(nstructs, A.shape[0]):
+                        j, s = contact_idx_dict[p]
+                        A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (contact_prior_factor)/Psi_inv[0,0]
+
+                    for j in xrange(nmeas):
+                        for s in xrange(nstructs):
+                            if contact_sites[s][j, idx]:
+                                b[contact_idx_dict[(j,s)]] = W[j,s]*self.data[j,idx]
+                    add_rand = True
+
+                   
                 print 'MAP system was not solved properly retrying with different contact priors'
                 print 'Number of contacts is %s' % ncontacts
-                print 'Changing prior factor to %s' % (contact_prior_factor + 0.1*tries)
+                print 'Changing prior factor to %s' % (new_prior_factor)
                 print x
                 for p in xrange(nstructs, A.shape[0]):
                     j, s = contact_idx_dict[p]
-                    A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (contact_prior_factor + 0.1*tries)/Psi_inv[0,0]
+                    A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (new_prior_factor)/Psi_inv[0,0]
 
                 for j in xrange(nmeas):
                     for s in xrange(nstructs):

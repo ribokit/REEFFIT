@@ -46,7 +46,7 @@ parser.add_argument('--worker', default=False, action='store_true', help='Worker
 parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
 parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
 parser.add_argument('--detailedplots', default=False, action='store_true', help='Plots log-likelihood trace, all predicted data vs real data separately, and comparison plots between initial and final structure weights')
-parser.add_argument('--nonormalization', default=False, action='store_true', help='Do not perform box-plot normalization of the data. Useful for MAP-seq datasets')
+parser.add_argument('--boxnormalize', default=False, action='store_true', help='Perform box-plot normalization of the data. Useful for capillary sequencing datasets')
 parser.add_argument('--dpi', type=int, default=200, help='DPI resolution for plots')
 parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits')
 parser.add_argument('--priorweights', type=str, default='rnastructure', help='Algorithm to use for starting structure weights. Can be "rnastructure", "viennarna", and "uniform"')
@@ -86,6 +86,11 @@ wt_idx = 0
 use_struct_clusters = False
 concentrations = []
 kds = []
+last_seqpos = 0
+
+def valid(seq):
+    return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
+
 for idx, d in enumerate(construct.data):
     if 'warning' in d.annotations:
         continue
@@ -104,26 +109,40 @@ for idx, d in enumerate(construct.data):
         label = d.annotations['mutation'][0]
     else:
         label = 'WT'
+    pos = []
     if label == 'WT':
         if 'sequence' in d.annotations:
             mutant = d.annotations['sequence'][0]
-        else:
+            pos = []
+            if not valid(sequence):
+                sequence = mutant
+            for i, ms in enumerate(mutant):
+                if ms != sequence[i]:
+                    pos.append(i)
+                    if label == 'WT':
+                        label = '%s%s%s' % (sequence[i], i + construct.offset + 1, mutant[i])
+        if pos == []:
             mutant = sequence
-        wt_idx = idx
-        pos = -1
+            wt_idx = idx
         mutpos.append(pos)
     else:
-        pos = int(label[1:len(label)-1]) - 1 - construct.offset
         if 'sequence' in d.annotations:
             mutant = d.annotations['sequence'][0]
+            pos = []
+            if not valid(sequence):
+                sequence = mutant
+            for i, ms in enumerate(mutant):
+                if ms != sequence[i]:
+                    pos.append(i)
         else:
+            pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
             mutant = sequence[:pos] + label[-1] + sequence[pos+1:]
-        mutpos.append(pos)
+        mutpos.append([pos])
     if mutant in mutants and args.nomutrepeat:
         continue
     mut_labels.append(label)
     mutants.append(mutant)
-    if args.nonormalization:
+    if not args.boxnormalize:
         nd_tmp = normalize([d.values[seqpos.index(i)] for i in sorted_seqpos])
         nd = [d.values[seqpos.index(i)] if d.values[seqpos.index(i)] >= 0 else 0.001 for i in sorted_seqpos]
         #nd = [nd[i] if nd[i] < 4 else max(nd_tmp) for i in range(len(nd))]
@@ -131,17 +150,24 @@ for idx, d in enumerate(construct.data):
     else:
         nd = normalize([d.values[seqpos.index(i)] for i in sorted_seqpos])
     if args.clipzeros:
-        last_seqpos = len(seqpos)
-        for i in xrange(len(nd)):
-            if nd[i] == 0:
-                last_seqpos = max(last_seqpos, i)
+        nd_last_sepos = len(seqpos)
+        for i in xrange(len(nd)-1, -1, -1):
+            if nd[i] != 0:
                 break
+            nd_last_seqpos = i
+        last_seqpos = max(nd_last_seqpos, last_seqpos)
     data.append(nd)
 if args.clipzeros:
     sorted_seqpos = sorted_seqpos[:last_seqpos]
     data = array(data)[:,:last_seqpos]
 else:
     data = array(data)
+
+for i in xrange(data.shape[0]):
+    for j in xrange(data.shape[1]):
+        if data[i,j] == 0:
+            data[i,j] = rand()*0.001
+
 if args.splitplots < 0:
     args.splitplots = data.shape[0]
 if args.cutoff > 0:
@@ -152,7 +178,7 @@ if args.cutoff > 0:
     seqpos_cutoff = sorted_seqpos[args.cutoff:-args.cutoff]
     seqpos_start = args.cutoff
     seqpos_end = data.shape[1] - args.cutoff
-    mutpos_cutoff = [pos - args.cutoff for pos in mutpos]
+    mutpos_cutoff = [[p - args.cutoff for p in pos] for pos in mutpos]
     seqpos_range = (seqpos_start, seqpos_end)
 elif args.start != None or args.end != None:
     if not (args.start and args.end):
@@ -308,7 +334,7 @@ def prepare_worker_file(idx, nsim, simfilename):
                 general_options += ' --%s=%s ' % (opt, val)
 
     for i in xrange(nsim):
-        wf.write('%s %s %s --structset=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/bin/reeffit ', general_options, i))
+        wf.write('%s %s %s --structset=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options, i))
     return wf.name
 
 if args.modelselect != None:
@@ -444,7 +470,7 @@ for b_iter in xrange(args.bootstrap + 1):
         pickle.dump(M_fa, open('%sM.pickle' % prefix, 'w'))
         pickle.dump(data_pred, open('%sdata_pred.pickle' % prefix, 'w'))
         pickle.dump(sigma_pred, open('%ssigma_pred.pickle' % prefix, 'w'))
-        if args.bootstrap_indices > 0:
+        if args.bootstrap > 0:
             pickle.dump(I, open('%sbootstrap_indices.pickle' % prefix, 'w'))
     pickle.dump(W_fa, open('%sW.pickle' % prefix, 'w'))
     pickle.dump(E_d_fa, open('%sE_d.pickle' % prefix, 'w'))
@@ -631,13 +657,17 @@ if args.bootstrap > 0:
         for i, s in enumerate(selected_structures):
             report.write('%s\t%s\t%.3f\t%.3f\n' % (i, fa.structures[s], Wcompile_mean[0,i], Wcompile_std[0,i]))
 print 'Performing post 1D secondary structure modeling'
+ss.debug = True
 if args.postmodel:
     if args.worker:
         print 'Post 1D structure modeling has no effect in worker mode!'
     else:
         new_structures = []
         for i in xrange(E_d_fa.shape[0]):
-            md = mapping.MappingData(data=E_d_fa[i,:], enforce_positives=True)
+            #md = mapping.MappingData(data=E_d_fa[i,:], enforce_positives=True)
+            E_d_fa[i,:][E_d_fa[i,:] < 0] = -999
+            pdb.set_trace()
+            md = mapping.MappingData(data=E_d_fa[i,:])
             new_structures.append(ss.fold(sequence, mapping_data=md, algorithm=args.priorweights)[0].dbn)
         open('%s/postmodel_structures.txt' % args.outprefix, 'w').write('\n'.join(new_structures))
         make_struct_figs(new_structures, 'postmodel_')

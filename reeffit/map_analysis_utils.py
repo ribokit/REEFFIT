@@ -320,7 +320,7 @@ def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=No
     bp_dicts = []
     nstructs = len(structures)
     if restrict_range:
-        mutpos_cutoff = [m + restrict_range[0] if m > 0 else m for m in mutpos]
+        mutpos_cutoff = [[m + restrict_range[0] if m > 0 else m for m in pos] for pos in mutpos]
     else:
         mutpos_cutoff = mutpos
     for s, struct in enumerate(structures):
@@ -330,13 +330,14 @@ def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=No
         contact_sites[s] = zeros([nmeas, npos])
     nstructs = len(structures)
     for j in xrange(nmeas):
-        if mutpos_cutoff[j] > 0:
-            for s in xrange(nstructs):
-                for k in xrange(-(c_size-1)/2, (c_size-1)/2+1):
-                    if mutpos_cutoff[j] + k >= 0 and mutpos[j] + k < npos:
-                        contact_sites[s][j,mutpos_cutoff[j]+k] = 1
-                    if mutpos_cutoff[j] in bp_dicts[s] and bp_dicts[s][mutpos_cutoff[j]] + k < npos and bp_dicts[s][mutpos_cutoff[j]] + k >= 0:
-                        contact_sites[s][j,bp_dicts[s][mutpos_cutoff[j]]+k] = 1
+        if len(mutpos_cutoff[j]) > 0:
+            for m in mutpos_cutoff[j]:
+                for s in xrange(nstructs):
+                    for k in xrange(-(c_size-1)/2, (c_size-1)/2+1):
+                        if m + k >= 0 and m + k < npos:
+                            contact_sites[s][j,m+k] = 1
+                        if m in bp_dicts[s] and bp_dicts[s][m] + k < npos and bp_dicts[s][m] + k >= 0:
+                            contact_sites[s][j,bp_dicts[s][m]+k] = 1
     if restrict_range != None:
         for s in xrange(nstructs):
             contact_sites[s] = contact_sites[s][:,restrict_range[0]:restrict_range[1]]

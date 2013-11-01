@@ -137,7 +137,7 @@ for idx, d in enumerate(construct.data):
         else:
             pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
             mutant = sequence[:pos] + label[-1] + sequence[pos+1:]
-        mutpos.append([pos])
+        mutpos.append(pos)
     if mutant in mutants and args.nomutrepeat:
         continue
     mut_labels.append(label)
@@ -323,7 +323,7 @@ def prepare_worker_file(idx, nsim, simfilename):
     general_options = '%s %sworker_%s --worker --structfile=%s' % (os.path.abspath(args.rdatfile.name), args.outprefix, idx, os.path.abspath(simfilename))
     carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
             'bootstrap', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
-            'nomutrepeat', 'clipzeros', 'kdfile', 'nonormalization', 'priorweights', 'njobs', 'csize']
+            'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize']
     for opt in carry_on_options:
         val = args.__dict__[opt]
         if val != None:

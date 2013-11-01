@@ -657,7 +657,6 @@ if args.bootstrap > 0:
         for i, s in enumerate(selected_structures):
             report.write('%s\t%s\t%.3f\t%.3f\n' % (i, fa.structures[s], Wcompile_mean[0,i], Wcompile_std[0,i]))
 print 'Performing post 1D secondary structure modeling'
-ss.debug = True
 if args.postmodel:
     if args.worker:
         print 'Post 1D structure modeling has no effect in worker mode!'
@@ -666,7 +665,6 @@ if args.postmodel:
         for i in xrange(E_d_fa.shape[0]):
             #md = mapping.MappingData(data=E_d_fa[i,:], enforce_positives=True)
             E_d_fa[i,:][E_d_fa[i,:] < 0] = -999
-            pdb.set_trace()
             md = mapping.MappingData(data=E_d_fa[i,:])
             new_structures.append(ss.fold(sequence, mapping_data=md, algorithm=args.priorweights)[0].dbn)
         open('%s/postmodel_structures.txt' % args.outprefix, 'w').write('\n'.join(new_structures))

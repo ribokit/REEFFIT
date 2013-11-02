@@ -96,7 +96,7 @@ print 'Plotting traces'
 figure(1)
 clf()
 for chi_sq_trace in chi_sq_traces:
-    plot(1/array(chi_sq_trace), alpha=0.6)
+    plot(array(chi_sq_trace), alpha=0.6, linewidth=3)
 xlabel('Sample')
-ylabel('$1/(\chi^2/df)$')
-savefig('%schi_sq_traces.png' % args.outprefix, dpi=200)
+ylabel('$\chi^2/df$')
+savefig('%s%s_chi_sq_traces.png' % (args.outprefix, args.method), dpi=200)

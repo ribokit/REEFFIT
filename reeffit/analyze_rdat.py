@@ -41,7 +41,7 @@ parser.add_argument('--bootstrap', type=int, default=0, help='Number of bootstra
 parser.add_argument('--titrate', type=str, default=None, help='For morph-and-map experiments. Name of chemical titrated. Must also specify kdfile when using this option.')
 parser.add_argument('--nomutrepeat', default=False, action='store_true', help='Skip repeating mutants')
 parser.add_argument('--clipzeros', default=False, action='store_true', help='Clip data to non-zero regions')
-parser.add_argument('--postmodel', default=False, action='store_true', help='Perform SHAPE-directed modeling after analysis using the calculated hidden reactivities for each structures. Useful if the hidden reactivities do not match well with the prior structures')
+parser.add_argument('--postmodel', default=False, action='store_true', help='Perform SHAPE-directed modeling after each EM iteration using the calculated hidden reactivities for each structures. Useful if the hidden reactivities do not match well with the prior structures')
 parser.add_argument('--worker', default=False, action='store_true', help='Worker mode (non-verbose, simple output). Used for MC model selection.')
 parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
 parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
@@ -117,7 +117,7 @@ for idx, d in enumerate(construct.data):
             if not valid(sequence):
                 sequence = mutant
             for i, ms in enumerate(mutant):
-                if ms != sequence[i]:
+                if ms != sequence[i] and len(pos) < 1:
                     pos.append(i)
                     if label == 'WT':
                         label = '%s%s%s' % (sequence[i], i + construct.offset + 1, mutant[i])
@@ -132,7 +132,7 @@ for idx, d in enumerate(construct.data):
             if not valid(sequence):
                 sequence = mutant
             for i, ms in enumerate(mutant):
-                if ms != sequence[i]:
+                if ms != sequence[i] and len(pos) < 1:
                     pos.append(i)
         else:
             pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
@@ -352,7 +352,7 @@ if args.modelselect != None:
         print 'Finished preparing worker files, run them using your scheduler and them use compile_worker_results.py to compile the results'
         exit()
     if args.modelselect in ['heuristic']:
-        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, n_jobs=args.njobs, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect)
+        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, n_jobs=args.njobs, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect, post_model=args.postmodel)
         print 'Getting sequence energies'
         energies = get_free_energy_matrix(structures, mutants)
         print 'Getting cluster energies'
@@ -419,7 +419,9 @@ for b_iter in xrange(args.bootstrap + 1):
         I = arange(data_cutoff.shape[1])
     seqpos_iter = [seqpos_cutoff[i] for i in I]
 
-    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, n_jobs=args.njobs, return_loglikes=True, hard_em=args.hardem)
+    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, n_jobs=args.njobs, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+
+    structures = post_structures
 
     loglikes, Psi_reinits = lhood_traces
 
@@ -432,6 +434,7 @@ for b_iter in xrange(args.bootstrap + 1):
     corr_facs, data_pred, sigma_pred = fa.correct_scale(stype=args.scalemethod)
     missed_indices, missed_vals = fa.calculate_missed_predictions(data_pred=data_pred)
     chi_sq, rmsea, aic = fa.calculate_fit_statistics()
+
 
     if args.clusterdatafactor and not args.worker:
 
@@ -656,6 +659,10 @@ if args.bootstrap > 0:
             report.write('Structure index\tStructure\tSeq 0 weight\tSeq 0 std\n')
         for i, s in enumerate(selected_structures):
             report.write('%s\t%s\t%.3f\t%.3f\n' % (i, fa.structures[s], Wcompile_mean[0,i], Wcompile_std[0,i]))
+
+for s in structures:
+    print s
+"""
 print 'Performing post 1D secondary structure modeling'
 if args.postmodel:
     if args.worker:
@@ -669,5 +676,7 @@ if args.postmodel:
             new_structures.append(ss.fold(sequence, mapping_data=md, algorithm=args.priorweights)[0].dbn)
         open('%s/postmodel_structures.txt' % args.outprefix, 'w').write('\n'.join(new_structures))
         make_struct_figs(new_structures, 'postmodel_')
+"""
+make_struct_figs(structures, 'postmodel_')
 print 'Done!'
 print '\a'

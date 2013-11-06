@@ -117,7 +117,7 @@ for idx, d in enumerate(construct.data):
             if not valid(sequence):
                 sequence = mutant
             for i, ms in enumerate(mutant):
-                if ms != sequence[i] and len(pos) < 1:
+                if ms != sequence[i]:# and len(pos) < 1:
                     pos.append(i)
                     if label == 'WT':
                         label = '%s%s%s' % (sequence[i], i + construct.offset + 1, mutant[i])
@@ -132,7 +132,7 @@ for idx, d in enumerate(construct.data):
             if not valid(sequence):
                 sequence = mutant
             for i, ms in enumerate(mutant):
-                if ms != sequence[i] and len(pos) < 1:
+                if ms != sequence[i]:# and len(pos) < 1:
                     pos.append(i)
         else:
             pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
@@ -205,6 +205,7 @@ if args.structfile != None:
     else:
         if args.structset != None:
             structures = []
+            original_structures = []
             start_reading_structs = False
             for line in args.structfile.readlines():
                 if line[0] == '#':
@@ -215,9 +216,11 @@ if args.structfile != None:
                 else:
                     if start_reading_structs:
                         structures.append(line.strip().replace('A', '.'))
+                        original_structures.append(line.strip().replace('A', '.'))
 
         else:
             structures = [line.strip().replace('A', '.') for line in args.structfile.readlines() if line[0] != '#']
+            original_structures = list(structures)
 else:
     if args.clusterfile != None:
         use_struct_clusters = True
@@ -319,7 +322,7 @@ def prepare_model_select_simulation_structure_file(idx, nsim):
     return sf.name
 
 def prepare_worker_file(idx, nsim, simfilename):
-    wf = open('%sworker%s.txt' % (args.outprefix, idx), 'w')
+    wf = open('%sworker%s.sh' % (args.outprefix, idx), 'w')
     general_options = '%s %sworker_%s --worker --structfile=%s' % (os.path.abspath(args.rdatfile.name), args.outprefix, idx, os.path.abspath(simfilename))
     carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
             'bootstrap', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
@@ -384,20 +387,6 @@ Wboot = zeros([nmeas, nstructs, args.bootstrap])
 Psiboot = zeros([npos, nmeas, nmeas, args.bootstrap])
 E_dboot = zeros([nstructs, npos, args.bootstrap])
 E_ddTboot = zeros([nstructs, nstructs, npos, args.bootstrap])
-
-def remove_non_cannonical(structure, sequence):
-    cannonical_bp = [('G','C'), ('C','G'), ('G','U'), ('U','G'), ('A','U'), ('U','A')]
-    bp_dict = ss.SecondaryStructure(dbn=structure).base_pair_dict()
-    res_struct = ['.']*len(sequence)
-    for n1, n2 in bp_dict.iteritems():
-        if (sequence[n1], sequence[n2]) in cannonical_bp:
-            if n1 < n2:
-                res_struct[n1] = '('
-                res_struct[n2] = ')'
-            else:
-                res_struct[n1] = ')'
-                res_struct[n2] = '('
-    return ''.join(res_struct)
 
 def make_struct_figs(structures, fprefix):
     for i, s in enumerate(structures):
@@ -480,7 +469,7 @@ for b_iter in xrange(args.bootstrap + 1):
 
     if args.worker:
         report = open('%s_results.txt' % prefix,'a')
-        report.write('%s\t%s\t%s\t%s\t%s\n' % (max(loglikes), chi_sq, rmsea, aic, ','.join(structures)))
+        report.write('%s\t%s\t%s\t%s\t%s\t%s\n' % (max(loglikes), chi_sq, rmsea, aic, ','.join(original_structures), ','.join([str(w) for w in W_fa[wt_idx,:].tolist()])))
         report.close()
         print 'Worker results were appended to %s' % report.name
     else:
@@ -561,15 +550,17 @@ for b_iter in xrange(args.bootstrap + 1):
             weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)])
             savefig('%s/weights_by_mutant%s.png' % (prefix,isuffix), dpi=args.dpi)
 
+            # Plot Log-likelihood trace
+            figure(3)
+            clf()
+            plot(loglikes, linewidth=2)
+            scatter(Psi_reinits, [loglikes[k] for k in Psi_reinits], label='$Psi$ reinit.')
+            ylabel('log-likelihood')
+            xlabel('iteration')
+            savefig('%s/loglike_trace.png' % (prefix), dpi=args.dpi)
+
+
             if args.detailedplots:
-                # Plot Log-likelihood trace
-                figure(3)
-                clf()
-                plot(loglikes, linewidth=2)
-                scatter(Psi_reinits, [loglikes[k] for k in Psi_reinits], label='$Psi$ reinit.')
-                ylabel('log-likelihood')
-                xlabel('iteration')
-                savefig('%s/loglike_trace.png' % (prefix), dpi=args.dpi)
                 # Plot weights by mutant by structure, compared to initial weight values
                 for j in xrange(nstructs):
                     figure(3)
@@ -677,6 +668,7 @@ if args.postmodel:
         open('%s/postmodel_structures.txt' % args.outprefix, 'w').write('\n'.join(new_structures))
         make_struct_figs(new_structures, 'postmodel_')
 """
-make_struct_figs(structures, 'postmodel_')
+if not args.worker and args.postmodel:
+    make_struct_figs(structures, 'postmodel_')
 print 'Done!'
 print '\a'

@@ -304,11 +304,27 @@ def mock_data(sequences, structures=None, energy_mu=0.5, energy_sigma=0.5, obs_s
         data_noised = data + obs_sigma*randn(data.shape[0], data.shape[1])
         return data_noised
 
+def remove_non_cannonical(structure, sequence):
+    cannonical_bp = [('G','C'), ('C','G'), ('G','U'), ('U','G'), ('A','U'), ('U','A')]
+    bp_dict = rdatkit.secondary_structure.SecondaryStructure(dbn=structure).base_pair_dict()
+    res_struct = ['.']*len(sequence)
+    for n1, n2 in bp_dict.iteritems():
+        if (sequence[n1], sequence[n2]) in cannonical_bp:
+            if n1 < n2:
+                res_struct[n1] = '('
+                res_struct[n2] = ')'
+            else:
+                res_struct[n1] = ')'
+                res_struct[n2] = '('
+    return ''.join(res_struct)
+
+
+
 def get_free_energy_matrix(structures, sequences, algorithm='rnastructure'):
     energies = zeros([len(sequences), len(structures)])
     for j, seq in enumerate(sequences):
         print 'Calculating structure energies for sequence %s: %s' % (j, seq)
-        energies[j,:] = array(rdatkit.secondary_structure.get_structure_energies(seq, [rdatkit.secondary_structure.SecondaryStructure(dbn=s) for s in structures], algorithm=algorithm))
+        energies[j,:] = array(rdatkit.secondary_structure.get_structure_energies(seq, [rdatkit.secondary_structure.SecondaryStructure(dbn=remove_non_cannonical(s, seq)) for s in structures], algorithm=algorithm))
 	minenergy = energies[j,:].min()
 	#energies[j,:] -= minenergy
 	for i in xrange(len(structures)):

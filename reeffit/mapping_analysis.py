@@ -498,10 +498,12 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         # to be solved
         print 'Solving MAP for E-step (hard EM) for sequence position %s' % idx
         ncontacts = 0
-        contact_prior_factor = 50.
+        # No Lapacian priors here, we use exponential (for hidden reactivities) and Gaussian (i.e. 2-norm) for contacts for easier calculations
+        contact_prior_factor = 1/1.5
         prior_factors = {}
-        prior_factors['u'] = 0.5
+        prior_factors['u'] = 1.5
         prior_factors['p'] = 1.
+        prior_factors['p'] = 5.
         nmeas = W.shape[0]
         nstructs = len(struct_types[0])
         contact_idx_dict = {}
@@ -539,7 +541,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                             if j == j2:
                                 #A[p,contact_idx_dict[(j,s)]] = W[j,s]
                                 if s == s2:
-                                    A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + contact_prior_factor/Psi_inv[0,0]
+                                    A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (contact_prior_factor)/Psi_inv[0,0]
                                 else:
                                     A[p,contact_idx_dict[(j,s)]] = W[j2,s2]*W[j,s]
         for j in xrange(nmeas):
@@ -559,17 +561,17 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         tries = 0
         while not solved:
             bounds = [(0.001, self.data.max())]*nstructs + [(-10,10)]*(A.shape[0] - nstructs)
-            x0 = [0.0 for i in xrange(nstructs)] + [0.0 for i in xrange(A.shape[0] - nstructs)]
+            x0 = [0.002 if struct_types[idx][s] == 'p' else 1. for s in xrange(nstructs)] + [0.0 for i in xrange(A.shape[0] - nstructs)]
             x = optimize.fmin_slsqp(f, x0, bounds=bounds)
+            #x = linalg.solve(A, b)
             solved = True
-            #x1 = linalg.solve(A, b)
             for s in xrange(nstructs):
                 if x[s] <= 0.001:
-                    E_d__obs[s] = 0.001*rand()
+                    E_d__obs[s] = 0.0001*rand()
                 else:
                     E_d__obs[s] = x[s]
                 if add_rand:
-                    E_d__obs[s] += randn()*0.01
+                    E_d__obs[s] += rand()*0.0001
             E_ddT__obs = dot(mat(E_d__obs).T, mat(E_d__obs))
             if (E_ddT__obs < 0).ravel().sum() > 1:
                 solved = False
@@ -582,10 +584,10 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 # This means that we need to rescale the contact prior
                 tries += 1
                 if tries > 100:
-                    new_prior_factor = contact_prior_factor - 0.1*(tries - 100)
+                    new_prior_factor = contact_prior_factor/(tries - 100)
                 else:
                     new_prior_factor = contact_prior_factor + 0.1*tries
-                if tries > 200:
+                if tries > 0:
                     print 'Could not figure out a good contact prior'
                     print 'Blaming E_ddT__obs singularities on data similarity'
                     print 'Adding a bit of white noise to alleviate'
@@ -762,14 +764,18 @@ class FAMappingAnalysis(MappingAnalysisMethod):
     def calculate_fit_statistics(self):
         data_pred, sigma_pred = self.calculate_data_pred()
         chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
-        df = self.data.size - self.W.size - self.E_d.size - self.E_c[logical_not(isnan(self.E_c))].size - self.data.shape[0] - 1
+        df = self.data.size - self.W.size - self.E_d.size - self.E_c[logical_not(isnan(self.E_c))].size - self.data.shape[1] - 1
+        k = -df - self.data.size + 1
         rmsea = sqrt(max((chi_sq/df - 1)/(self.data.shape[1] - 1), 0.0))
-        return chi_sq/df, rmsea, chi_sq + 2*df
+        return chi_sq/df, rmsea, asscalar(chi_sq + 2*k - self.data.shape[0]*self.logpriors)
 
 
     def correct_scale(self, stype='linear'):
         data_pred, sigma_pred = self.calculate_data_pred()
         corr_facs = [1]*data_pred.shape[1]
+        if stype == 'none':
+            return corr_facs, self.data_pred, self.sigma_pred
+
         if stype == 'linear':
             for i in xrange(len(corr_facs)):
                 corr_facs[i] = asscalar(dot(data_pred[:,i], self.data[:,i])/dot(data_pred[:,i], data_pred[:,i]))
@@ -842,7 +848,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             kds = []
         return structures, energies, struct_types, contact_sites, concentrations, kds
 
-    def _assign_W(self, E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals):
+    def _assign_W(self, E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals, lam=0):
         # Constrain the weights to be positive
         # If we were specified energies, we need to apply the lagrange multipliers
         # to constarint weights to be convex combinations and then
@@ -877,8 +883,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     #E_d_proj += self.data[j,i]*E_d[:,i]
                     E_d_proj += -Psi_inv[i,j,j]*self.data[j,i]*E_d_c_j[:,i]
                     E_ddT_Psi_inv += Psi_inv[i,j,j]*E_ddT[:,:,i]
+
+                if lam != 0:
+                    E_ddT_Psi_inv += 2*lam*diag(1/(W_initvals[j,:]**2))
+                    E_d_proj += 2*lam*mat(1./W_initvals[j,:]).T
                 'Solving weights for measurement %s' % j
-                lam = 2
                 #P = cvxmat(E_ddT_Psi_inv - (2*eye(nstructs) - ones([nstructs, nstructs])))
                 P = cvxmat(E_ddT_Psi_inv)
                 Gc = cvxmat(-eye(nstructs))
@@ -886,8 +895,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 A = cvxmat(1.0, (1, nstructs))
                 b = cvxmat(1.0)
                 p = cvxmat(E_d_proj)
-                #sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[0,:])})['x'])
-                sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
+                sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[j,:])})['x'])
+                #sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
                 W[j,:] = sol.T
                 W[j, (sol.T <= 0)[0]] = 1e-10
             # ========= End using CVXOPT ================
@@ -1173,7 +1182,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 raise ValueError('E[d*dT | data] matrix is singular!')
 
             # Given our expected reactivities, now assign the weights
-            W_new = self._assign_W(E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals)
+            lam = 100.
+            W_new = self._assign_W(E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals, lam)
 
             #W_new = W + adaptive_factor*(W_new - W)
             W_new[W_new < 0] = 1e-10
@@ -1201,9 +1211,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 for sidx, s in enumerate(select_struct_indices):
                     domodeling = False
                     # Be conservative, for each structure, only do post-facto modeling if E_d is totally off for at least one position
-                    for i in seq_indices:
-                        if struct_types[i][sidx] == 'p' and self.paired_pdf(E_d[sidx,i]) < 0.05:
-                            print self.paired_pdf(E_d[sidx,i])
+                    for iidx in xrange(len(seq_indices)):
+                        if struct_types[iidx][sidx] == 'p' and self.paired_pdf(E_d[sidx,iidx]) < 0.05:
+                            print self.paired_pdf(E_d[sidx,iidx])
                             domodeling = True
                     if domodeling:
                         md = mapping.MappingData(data=asarray(E_d[sidx,:]*1.5).ravel(), seqpos=seq_indices)
@@ -1212,7 +1222,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         new_contact_sites = utils.get_contact_sites([structure], self.mutpos, self.data.shape[0], self.data.shape[1], self.c_size, restrict_range=self.seqpos_range)
                         if (contact_sites[sidx] != new_contact_sites[0]).sum() > 0:
                             didpostmodel = True
-                        for idx, i in enumerate(seq_indices):
+                        for i in xrange(self.data.shape[1]):
                             struct_types[i][sidx] = new_struct_types[i][0]
                         contact_sites[sidx] = new_contact_sites[0][:, seq_indices]
                         self._restricted_contact_sites[s] = new_contact_sites[0][:, seq_indices]
@@ -1222,7 +1232,25 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                             self.struct_types[i][s] = new_struct_types[i][0]
                         self.contact_sites[s] = new_contact_sites[0] 
                         self.structures[s] = structure
+            
+            # Add prior likelihoods
+            logpriors = 0
+            for sidx in xrange(len(select_struct_indices)):
+                try:
+                    logpriors += -(lam*(W*(1./W_initvals))).sum()
+                except FloatingPointError:
+                    logpriors += -1e100
 
+                for iidx in xrange(len(seq_indices)):
+                    try:
+                        if struct_types[iidx][sidx] == 'p':
+                            logpriors += log(self.paired_pdf(E_d[sidx,iidx]))
+                        else:
+                            logpriors += log(self.unpaired_pdf(E_d[sidx,iidx]))
+                    except FloatingPointError:
+                        logpriors += -1e100
+
+            loglike += logpriors
             # Check if we are done
             if not didpostmodel:
                 print t
@@ -1233,6 +1261,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             else:
                 if True or loglike > max_loglike or max_iterations == 1:
                     max_loglike = loglike
+                    self.logpriors = logpriors
                     W_opt = W
                     E_d_opt = E_d
                     E_c_opt = E_c
@@ -1241,7 +1270,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     E_ddT_opt = E_ddT
                     adaptive_factor *= 2
 
-                if abs(loglike - old_loglike) < tol or t+1 == max_iterations:
+                if False and abs(loglike - old_loglike) < tol or t+1 == max_iterations:
                     break
                 if loglike < old_loglike:
                     print 'Warning: Likelihood value is decreasing. This is probably due to:'
@@ -1286,7 +1315,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
             Psi_inv = linalg.inv(Psi)
             self.perturbs = perturbs
-            self.W = asarray(self._assign_W(E_d, E_ddT, E_ddT_inv, alldata_E_d, Psi, contact_sites, allenergies, allconcentrations, allkds, G_constraint, allmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals))
+            self.W = asarray(self._assign_W(E_d, E_ddT, E_ddT_inv, alldata_E_d, Psi, contact_sites, allenergies, allconcentrations, allkds, G_constraint, allmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals, lam))
             self.W_std = asarray(self._calculate_MLE_std(self.W, Psi_inv, E_ddT))
             self.Psi = asarray(Psi)
             self.perturbs = asarray(perturbs)

@@ -392,7 +392,7 @@ def make_struct_figs(structures, fprefix):
     for i, s in enumerate(structures):
         VARNA.cmd(mutants[0], remove_non_cannonical(s, mutants[0]), args.outprefix + fprefix + 'structure%s.svg' % i, options={'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'})
 
-if not args.worker:
+if False and not args.worker:
     make_struct_figs(structures, '')
 for b_iter in xrange(args.bootstrap + 1):
 
@@ -495,6 +495,8 @@ for b_iter in xrange(args.bootstrap + 1):
 
         r = range(data_cutoff.shape[1])
         for i, s in enumerate(selected_structures):
+            if True:
+                continue
             f = figure(2)
             f.set_size_inches(15, 5)
             clf()

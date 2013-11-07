@@ -394,6 +394,7 @@ def make_struct_figs(structures, fprefix):
 
 if False and not args.worker:
     make_struct_figs(structures, '')
+
 for b_iter in xrange(args.bootstrap + 1):
 
     if b_iter > 0:

@@ -453,7 +453,10 @@ for b_iter in xrange(args.bootstrap + 1):
         Psiboot[:,:,:,b_iter-1] = Psi_fa
 
     print 'Saving data'
-    if not args.worker:
+    if args.worker:
+        worker_dict = {'W':W_fa, 'E_d':E_d_fa, 'data_pred':data_pred, 'sigma_pred':sigma_pred, 'Psi':Psi_fa, 'data':fa.data}
+        pickle.dump(worker_dict, open('%s_%s_dict.pickle' % (prefix, args.structset), 'w'))
+    else:
         pickle.dump(fa.data, open('%sdata.pickle' % prefix, 'w'))
         pickle.dump(W_fa_std, open('%sW_std.pickle' % prefix, 'w'))
         pickle.dump(Psi_fa, open('%sPsi.pickle' % prefix, 'w'))
@@ -462,10 +465,11 @@ for b_iter in xrange(args.bootstrap + 1):
         pickle.dump(M_fa, open('%sM.pickle' % prefix, 'w'))
         pickle.dump(data_pred, open('%sdata_pred.pickle' % prefix, 'w'))
         pickle.dump(sigma_pred, open('%ssigma_pred.pickle' % prefix, 'w'))
+        pickle.dump(W_fa, open('%sW.pickle' % prefix, 'w'))
+        pickle.dump(E_d_fa, open('%sE_d.pickle' % prefix, 'w'))
         if args.bootstrap > 0:
             pickle.dump(I, open('%sbootstrap_indices.pickle' % prefix, 'w'))
-    pickle.dump(W_fa, open('%sW.pickle' % prefix, 'w'))
-    pickle.dump(E_d_fa, open('%sE_d.pickle' % prefix, 'w'))
+
 
     if args.worker:
         report = open('%s_results.txt' % prefix,'a')

@@ -30,11 +30,11 @@ def _mutinf(typ1, typ2):
             res += 1
     return res
 
-def _bpdist(sbp1, sbp2):
+def bpdist(sbp1, sbp2):
     res = 0
     for bp1_1, bp1_2 in sbp1:
         for bp2_1, bp2_2 in sbp2:
-            if (bp1_1 == bp2_1 and bp1_2 == bp2_2) or (bp1_2 == bp2_1 and bp1_1 == bp2_2):
+            if not ((bp1_1 == bp2_1 and bp1_2 == bp2_2) or (bp1_2 == bp2_1 and bp1_1 == bp2_2)):
                 res += 1
     return res
     
@@ -46,13 +46,8 @@ def get_struct_types(structures, cutoff=-1):
         struct_types.append(['u' if s[i] == '.' else 'p' for s in structures])
     return struct_types
 
-
-def cluster_structures(struct_types, structures=[], distance='mutinf', expected_medoids=-1):
+def get_structure_distance_matrix(structures, struct_types, distance='mutinf'):
     nstructs = len(struct_types[0])
-    print 'Clustering structures'
-    # Ok, find a subset of structures that are mostly "orthogonal", clustering
-    # with mutual information (mutinf option) or base pair distance (basepair option)
-    # Looks ugly, but seems that numpy's symmetric matrix support is limited (i.e. none)
     if distance == 'basepair':
         structures_bp = [rdatkit.secondary_structure.SecondaryStructure(dbn=struct).base_pairs() for struct in structures]
     D = zeros([nstructs, nstructs])
@@ -63,10 +58,19 @@ def cluster_structures(struct_types, structures=[], distance='mutinf', expected_
             if distance == 'mutinf':
                 D[i,j] = _mutinf(st1, [s[j] for s in struct_types])  
             elif distance == 'basepair':
-                D[i,j] = _bpdist(structures_bp[i], structures_bp[j])
+                D[i,j] = bpdist(structures_bp[i], structures_bp[j])
             else:
                 raise ValueError('Distance %s not recognized: options are "mutinf" and "basepair"' % distance)
             D[j,i] = D[i,j]
+    return D
+
+def cluster_structures(struct_types, structures=[], distance='mutinf', expected_medoids=-1):
+    nstructs = len(struct_types[0])
+    print 'Clustering structures'
+    # Ok, find a subset of structures that are mostly "orthogonal", clustering
+    # with mutual information (mutinf option) or base pair distance (basepair option)
+    # Looks ugly, but seems that numpy's symmetric matrix support is limited (i.e. none)
+    D = get_structure_distance_matrix(structures, struct_types, distance=distance)
     # Proxy for ensemble centroid (EC)
     minsumdist = inf
     for i in xrange(nstructs):

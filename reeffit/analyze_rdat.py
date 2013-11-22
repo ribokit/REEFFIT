@@ -1,7 +1,7 @@
 import argparse
 import pdb
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 from matplotlib.colors import rgb2hex
 import os
 import rdatkit.secondary_structure as ss
@@ -31,13 +31,14 @@ parser.add_argument('--clusterfile', default=None, type=argparse.FileType('r'), 
 parser.add_argument('--medoidfile', default=None, type=argparse.FileType('r'), help='File specifying the medoid structures of each cluster. Must also specify a clusterfile.')
 parser.add_argument('--structset', default=None, type=str, help='Subset of structures in the specified structfile to use in the analysis. Each subset is identified by a "header" specified after a hash (#) preceding the set of structures. This option will search all headers for structset and analyze the data with those structures. Used in worker mode.')
 
-# Dataset subset options
+# Pre-processing options
 parser.add_argument('--cutoff', default=0, type=int, help='Number of data points and nucleotides to cut off from the beginning and end of the data and sequences: these will not be used in the analysis. Useful to avoid saturated "outliers" in the data.')
 parser.add_argument('--start', default=None, type=int, help='Seqpos starting position of the data and sequences from where to analyze. Useful to focus the analysis on a particular location. Must specify both start and end options.')
 parser.add_argument('--end', default=None, type=int, help='Seqpos ending position of the data and sequences to analyze. Useful to focus the analysis on a particular location. Must specify both start and end options.')
 parser.add_argument('--nomutrepeat', default=False, action='store_true', help='Skip repeating mutants')
 parser.add_argument('--clipzeros', default=False, action='store_true', help='Clip data to non-zero regions')
 parser.add_argument('--csize', type=int, default=3, help='Number of sequence positions to be allowed for contact sites.')
+parser.add_argument('--boxnormalize', default=False, action='store_true', help='Perform box-plot normalization of the data. Useful for capillary sequencing datasets')
 
 # Model selection options
 parser.add_argument('--modelselect', type=str, default=None, help='Model selection mode. Can be one of "heuristic", "mc" (Monte Carlo, including MCMC), and "cv"')
@@ -69,7 +70,7 @@ parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help=
 parser.add_argument('--lamreacts', default=0, type=float, help='Regularization parameter controlling the similarity between reactivities of similar structures. Higher values will force similar reactivities between structures, depending on their base pair distance.')
 parser.add_argument('--lamweights', default=0, type=float, help='Regularization parameter controlling how far from the initial weight estimates (e.g. from RNAstructure or ViennaRNA). Higher values will force weights to be closer to initial estimates')
 parser.add_argument('--lamfile', default=None, type=argparse.FileType('r'), help='File with results of a cross-validation run. Format is lines with cross_validation_error, lam_reacts, lam_weights; tab-delimited. Values with lowest cross_validation_error will be taken for values of lam_reacts and lam_weights.')
-parser.add_argument('--boxnormalize', default=False, action='store_true', help='Perform box-plot normalization of the data. Useful for capillary sequencing datasets')
+parser.add_argument('--decompose', action='store_true', default=False, help='Decompose structures into a set of overlapping motifs to reduce number of variables to fit.')
 parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits')
 
 # Plotting options
@@ -85,6 +86,7 @@ worker_file_formats = ['gridengine', 'sh']
 carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
         'bootstrap', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
         'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize']
+MAX_STRUCTURES_PLOT = 10
 
 print 'Parsing RDAT'
 rdat = RDATFile()
@@ -113,9 +115,12 @@ last_seqpos = 0
 def valid(seq):
     return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
 
-def make_struct_figs(structures, fprefix):
+def make_struct_figs(structures, fprefix, indices=None):
+    if indices == None:
+        indices = range(len(structures))
     for i, s in enumerate(structures):
-        VARNA.cmd(mutants[0], remove_non_cannonical(s, mutants[0]), args.outprefix + fprefix + 'structure%s.svg' % i, options={'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'})
+        print s
+        VARNA.cmd(mutants[0], remove_non_cannonical(s, mutants[0]), args.outprefix + fprefix + 'structure%s.svg' % indices[i], options={'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'})
 
 def carry_on_option_string():
     options = ''
@@ -384,7 +389,9 @@ if args.titrate != None:
 #    energies = get_free_energy_matrix(structures,[m for m in  mutants], algorithm=args.priorweights)
 if args.modelselect ==  None or args.modelselect == 'heuristic':
     energies = get_free_energy_matrix(structures, mutants, algorithm=args.priorweights)
-fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize)
+fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs)
+if args.decompose:
+    fa.perform_motif_decomposition()
 unpaired_data, paired_data = fa.set_priors_by_rvs(SHAPE_unpaired_sample, SHAPE_paired_sample)
 
 if args.modelselect != None:
@@ -414,9 +421,19 @@ if args.modelselect != None:
         tot_num_tries = args.msnsim*args.msnworkers
         param_max = max(args.maxlamreacts, args.maxlamweights)
         param_delta = param_max/sqrt(tot_num_tries)
-        for i in arange(0, args.maxlamreacts, param_delta):
+        if args.lamweights and args.lamreacts:
+            print 'Cannot specify both lam_weights and lam_reacts when preparing cross-validation files!'
+            exit()
+        if args.lamweights:
+            for i in arange(0, args.maxlamreacts, param_delta):
+                parameter_grid.append((i,args.lamweights))
+        elif args.lamreacts:
             for j in arange(0, args.maxlamweights, param_delta):
-                parameter_grid.append((i,j))
+                parameter_grid.append((args.lamreacts,j))
+        else:
+            for i in arange(0, args.maxlamreacts, param_delta):
+                for j in arange(0, args.maxlamweights, param_delta):
+                    parameter_grid.append((i,j))
         for i in xrange(args.msnworkers):
             prepare_cv_worker_file(i, parameter_grid[i:i+args.msnsim])
         print 'Finished preparing worker files, run them using your scheduler and them use the cross_validation_results.txt file as input to the lamfile option of your full REEFFIT run!'
@@ -424,7 +441,7 @@ if args.modelselect != None:
 
     if args.modelselect in ['heuristic']:
         fa.energies = energies
-        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, n_jobs=args.njobs, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect, post_model=args.postmodel)
+        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect, post_model=args.postmodel)
         print 'Getting sequence energies'
         energies = get_free_energy_matrix(structures, mutants)
         print 'Getting cluster energies'
@@ -441,7 +458,7 @@ if args.modelselect != None:
         outmedoidsfile.close()
         print 'Plotting PCA structure clusters'
         PCA_structure_plot(structures, assignments, selected_structures)
-        savefig(args.outprefix + 'pca_cluster_plot.png', dpi=300)
+        savefig(args.outprefix + 'pca_cluster_plot_ms.png', dpi=300)
         print 'Done, check out cluster file %s and medoids file %s' % (outclustfile.name, outmedoidsfile.name)
         exit()
 else:
@@ -470,11 +487,11 @@ if args.crossvalidate > 0:
         cv_indices = [x for x in chain(*[fold_sets [i] for i in xrange(args.crossvalidate) if i != fold])]
         pred_indices = fold_sets[fold]
 
-        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights)
-        lhood_traces, W_cv, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=cv_indices, n_jobs=args.njobs, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, njobs=args.njobs)
+        lhood_traces, W_cv, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=cv_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
 
-        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights)
-        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W_cv, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=pred_indices, n_jobs=args.njobs, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, njobs=args.njobs)
+        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W_cv, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=pred_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
 
         data_pred_cv, sigma_pred_cv = fa_cv.calculate_data_pred()
         data_pred_cv[data_pred_cv >= data_pred_cv.mean()] = 1
@@ -513,8 +530,14 @@ Psiboot = zeros([npos, nmeas, nmeas, args.bootstrap])
 E_dboot = zeros([nstructs, npos, args.bootstrap])
 E_ddTboot = zeros([nstructs, nstructs, npos, args.bootstrap])
 
-if False and not args.worker:
-    make_struct_figs(structures, '')
+medoid_dict, assignments = cluster_structures(fa.struct_types, structures=structures)
+maxmedoids = [medoid_dict[k] for k in assignments]
+if not args.worker:
+    if len(structures) > MAX_STRUCTURES_PLOT:
+        make_struct_figs([structures[i] for i in maxmedoids], '', indices=maxmedoids)
+    else:
+        make_struct_figs(structures, '')
+
 
 for b_iter in xrange(args.bootstrap + 1):
 
@@ -533,7 +556,7 @@ for b_iter in xrange(args.bootstrap + 1):
 
         
         
-    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, n_jobs=args.njobs, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
 
     structures = post_structures
 
@@ -598,7 +621,6 @@ for b_iter in xrange(args.bootstrap + 1):
         report.close()
         print 'Worker results were appended to %s' % report.name
     else:
-        """
         print 'Printing report'
         report = open('%s/report.txt' % prefix,'w')
         report.write('Arguments: %s\n' % args)
@@ -618,20 +640,7 @@ for b_iter in xrange(args.bootstrap + 1):
         report.write('RMSEA: %s\n' % rmsea)
         report.write('AIC: %s\n' % aic)
         report.close()
-        """
         r = range(data_cutoff.shape[1])
-        for i, s in enumerate(selected_structures):
-            continue
-            f = figure(2)
-            f.set_size_inches(15, 5)
-            clf()
-            title('Structure %s: %s' % (i, s))
-            if args.hardem:
-                expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:], seq_indices=I)
-            else:
-                expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
-            xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
-            savefig('%s/exp_react_struct_%s.png' % (prefix, i), dpi=args.dpi)
 
         for i in arange(0, data_cutoff.shape[0], args.splitplots):
             if i == 0 and args.splitplots == data_cutoff.shape[0]:
@@ -655,26 +664,31 @@ for b_iter in xrange(args.bootstrap + 1):
                     missed_indices=missed_indices, weights=W_fa[i:i+args.splitplots,:])
             savefig('%s/data_pred_annotated%s.png' % (prefix,isuffix), dpi=args.dpi)
 
-            """
+            # Structure cluster landscape plot for wild type
+            PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:])
+            savefig('%s/pca_landscape_plot_WT%s.png' % (prefix,isuffix), dpi=args.dpi)
+
             figure(1)
             clf()
-            imshow(C[i:i+args.splitplots,:], cmap=get_cmap('jet'), interpolation='nearest')
-            savefig('%s/contacts%s.png' % (prefix,isuffix), dpi=args.dpi)
-            """
-            for s in xrange(len(structures)):
-                figure(1)
-                clf()
-                imshow(E_c_fa[i:i+args.splitplots,s,:] - fa.calculate_data_pred(no_contacts=True)[0], aspect='auto', interpolation='nearest')
-                xticks(range(len(seqpos_iter)), ['%s%s' % (pos, sequence[pos - offset - 1]) for pos in seqpos_iter], fontsize='xx-small', rotation=90)
-                ml = [mut_labels[k] for k in xrange(i, i+args.splitplots)]
-                yticks(range(len(ml)), ml, fontsize='xx-small')
-                savefig('%s/E_c_%s_structure_%s.png' % (prefix,isuffix,s), dpi=args.dpi)
+            unstruct_indices = []
+            for selstruct, structidx in enumerate(selected_structures):
+                for seqidx, struct in enumerate(structures[structidx]):
+                    if struct == '.':
+                        unstruct_indices.append((selstruct,seqidx))
+            plot_mutxpos_image(E_d_fa[:, I], sequence, seqpos_iter, offset, [str(k) for k in xrange(E_d_fa.shape[0])], missed_indices=unstruct_indices, aspect=None)
+            ylabel('Structure')
+            xlabel('Sequence position')
+            savefig('%s/E_d%s.png' % (prefix, isuffix), dpi=args.dpi+100)
 
-
+            # Plot weights
             figure(3)
             clf()
             ax = subplot(111)
-            weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)])
+            if len(structures) > MAX_STRUCTURES_PLOT:
+                weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], assignments=assignments, medoids=maxmedoids)
+            else:
+                weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)])
+
             savefig('%s/weights_by_mutant%s.png' % (prefix,isuffix), dpi=args.dpi)
 
             # Plot Log-likelihood trace
@@ -688,6 +702,27 @@ for b_iter in xrange(args.bootstrap + 1):
 
 
             if args.detailedplots:
+                for s in xrange(len(structures)):
+                    figure(1)
+                    clf()
+                    imshow(E_c_fa[i:i+args.splitplots,s,:] - fa.calculate_data_pred(no_contacts=True)[0], aspect='auto', interpolation='nearest')
+                    xticks(range(len(seqpos_iter)), ['%s%s' % (pos, sequence[pos - offset - 1]) for pos in seqpos_iter], fontsize='xx-small', rotation=90)
+                    ml = [mut_labels[k] for k in xrange(i, i+args.splitplots)]
+                    yticks(range(len(ml)), ml, fontsize='xx-small')
+                    savefig('%s/E_c_%s_structure_%s.png' % (prefix,isuffix,s), dpi=args.dpi)
+
+                for i, s in enumerate(selected_structures):
+                    f = figure(2)
+                    f.set_size_inches(15, 5)
+                    clf()
+                    title('Structure %s: %s' % (i, s))
+                    if args.hardem:
+                        expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:], seq_indices=I)
+                    else:
+                        expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
+                    xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
+                    savefig('%s/exp_react_struct_%s.png' % (prefix, i), dpi=args.dpi)
+
                 # Plot weights by mutant by structure, compared to initial weight values
                 for j in xrange(nstructs):
                     figure(3)
@@ -758,7 +793,11 @@ if args.bootstrap > 0:
         figure(3)
         clf()
         ax = subplot(111)
-        weights_by_mutant_plot(Wcompile_mean, Wcompile_std, mut_labels)
+        if len(structures) > MAX_STRUCTURES_PLOT:
+            weights_by_mutant_plot(Wcompile_mean, Wcompile_std, mut_labels, assignments=assignments, medoids=maxmedoids)
+        else:
+            weights_by_mutant_plot(Wcompile_mean, Wcompile_std, mut_labels)
+
         savefig('%s/bootstrap_weights_by_mutant.png' % (args.outprefix), dpi=args.dpi)
 
         if args.detailedplots:
@@ -780,22 +819,12 @@ if args.bootstrap > 0:
 
 for s in structures:
     print s
-"""
-print 'Performing post 1D secondary structure modeling'
-if args.postmodel:
-    if args.worker:
-        print 'Post 1D structure modeling has no effect in worker mode!'
-    else:
-        new_structures = []
-        for i in xrange(E_d_fa.shape[0]):
-            #md = mapping.MappingData(data=E_d_fa[i,:], enforce_positives=True)
-            E_d_fa[i,:][E_d_fa[i,:] < 0] = -999
-            md = mapping.MappingData(data=E_d_fa[i,:])
-            new_structures.append(ss.fold(sequence, mapping_data=md, algorithm=args.priorweights)[0].dbn)
-        open('%s/postmodel_structures.txt' % args.outprefix, 'w').write('\n'.join(new_structures))
-        make_struct_figs(new_structures, 'postmodel_')
-"""
+
 if not args.worker and args.postmodel:
+    if len(structures) > MAX_STRUCTURES_PLOT:
+        make_struct_figs([structures[i] for i in maxmedoids], 'postmodel_', indices=maxmedoids)
+    else:
+        make_struct_figs(structures, 'postmodel_')
     make_struct_figs(structures, 'postmodel_')
 print 'Done!'
 print '\a'

@@ -1,4 +1,5 @@
 import pdb
+import inspect
 #import mdp
 import pymc
 import joblib
@@ -192,8 +193,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
     FACTOR_ESTIMATION_METHODS = ['fanalysis', 'hclust']
     MODEL_SELECT_METHODS = ['heuristic', 'bruteforce']
-    def __init__(self, data, structures, sequences, wt_index=0, mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None, lam_reacts=0, lam_weights=0):
+    def __init__(self, data, structures, sequences, wt_index=0, mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None, lam_reacts=0, lam_weights=0, njobs=None):
         MappingAnalysisMethod.__init__(self, data, structures, sequences, energies, wt_index, mutpos, c_size, seqpos_range)
+        self.njobs = njobs
         self.concentrations = concentrations
         self.kds = kds
         self.unpaired_pdf = SHAPE_unpaired_pdf
@@ -202,6 +204,20 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         self.bp_dist /= float(len(self._origstructures[0]))
         self.lam_reacts = lam_reacts
         self.lam_weights = lam_weights
+        self.use_motif_decomposition = False
+
+    def perform_motif_decomposition(self):
+        print 'Starting motif decomposition'
+        self.pos_motif_map, self.motif_ids = utils.get_minimal_overlapping_motif_decomposition(self._origstructures)
+        nmotpos = []
+        for i in xrange(self.data.shape[1]):
+            nmotifs = 0
+            for midx in xrange(len(self.pos_motif_map)):
+                if (i, midx) in self.pos_motif_map:
+                    nmotifs += 1
+            nmotpos.append(nmotifs)
+        print 'Number of motifs per position: %s' % nmotpos
+        self.use_motif_decomposition = True
 
     # To perform a standard factor analysis, with normal priors
     # We use this mainly to have a first estimate of the number
@@ -255,7 +271,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             self.W, self.struct_weights_by_clust = utils.calculate_weights(self.energies, clusters=cluster_indices)
 
-    def model_select(self, expected_structures=0, greedy_iter=0, expstruct_estimation='hclust', tol=1e-4, max_iterations=10, prior_swap=True, G_constraint=None, n_jobs=None, apply_pseudoenergies=True, algorithm='rnastructure', hard_em=False, method='heuristic', post_model=False):
+    def model_select(self, expected_structures=0, greedy_iter=0, expstruct_estimation='hclust', tol=1e-4, max_iterations=10, prior_swap=True, G_constraint=None, apply_pseudoenergies=True, algorithm='rnastructure', hard_em=False, method='heuristic', post_model=False):
         print 'Starting model selection'
         if method not in FAMappingAnalysis.MODEL_SELECT_METHODS:
             raise ValueError('Unrecognized model selection method %s' % method)
@@ -378,7 +394,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             print [self.structures[i] for i in selected_structs]
             lhood_opt, W_opt, W_std_opt, Psi_opt, E_d_opt, E_c_opt, sigma_d_opt, E_ddT_opt, perturbs_opt, post_structures_opt = self.analyze(max_iterations=2, tol=tol, \
                                                                          nsim=5000, select_struct_indices=maxmedoids.values(), G_constraint=G_constraint,\
-                                                                         n_jobs=n_jobs, hard_em=hard_em, post_model=post_model)
+                                                                         hard_em=hard_em, post_model=post_model)
             minAICc = utils.AICc(lhood_opt, self.data, W_opt, E_d_opt, E_c_opt, Psi_opt)
             def structure_similarity(s1, s2):
                 simcounts = 0.
@@ -414,7 +430,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     continue
                 lhood, W, W_std, Psi, E_d, E_c, sigma_d, E_ddT, perturbs, post_structures = self.analyze(max_iterations=max_iterations, tol=tol, \
                                                                    nsim=5000, \
-                                                                   select_struct_indices=selected_structs + [new_struct], G_constraint=G_constraint, n_jobs=n_jobs, hard_em=hard_em, post_model=post_model)
+                                                                   select_struct_indices=selected_structs + [new_struct], G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
                 currAICc = utils.AICc(lhood, self.data, W, E_d, E_c, Psi)
                 if currAICc < minAICc:
                     AICc_decreased = True
@@ -435,7 +451,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     reduced_structs = [selected_structs[j] for j in xrange(len(selected_structs)) if j != i]
                     lhood, W, W_std, Psi, E_d, E_c, sigma_d, E_ddT, perturbs, post_structures = self.analyze(max_iterations=max_iterations, tol=tol, \
                                                                        nsim=5000, \
-                                                                       select_struct_indices=reduced_structs, G_constraint=G_constraint, n_jobs=n_jobs, hard_em=hard_em, post_model=post_model)
+                                                                       select_struct_indices=reduced_structs, G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
                     currAICc = utils.AICc(lhood, self.data, W, E_d, E_c, Psi)
                     if currAICc < minAICc:
                         AICc_decreased = True
@@ -476,13 +492,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             minAICc = inf
             starting_structures = sample(all_struct_indices, expected_structures)
             lhood_opt, W_opt, W_std_opt, Psi_opt, E_d_opt, E_c_opt, sigma_d_opt, E_ddT_opt, perturbs, post_structures = self.analyze(max_iterations=max_iteration, tol=tol, \
-                                                                               nsim=est_nstructs*100, n_jobs=n_jobs,\
+                                                                               nsim=est_nstructs*100, \
                                                                                select_struct_indices=starting_structures, G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
             minAICc = utils.AICc(lhood_opt, self.data, W_opt, E_d_opt, E_c_opt, Psi_opt)
             for subset in itertools.combinations(all_struct_indices, expected_structures):
                 if subset != starting_structures:
                     lhood, W, W_std, Psi, E_d, E_d, sigma_d, E_ddT, perturbs, post_structures = self.analyze(max_iterations=max_iteration, tol=tol, \
-                                                                                       nsim=est_nstructs*100, n_jobs=n_jobs, \
+                                                                                       nsim=est_nstructs*100, \
                                                                                        select_struct_indices=subset, G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
                     currAICc = utils.AICc(lhood, self.data, W, E_d, E_c, Psi)
                     if currAICc < minAICc:
@@ -512,56 +528,121 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         nmeas = W.shape[0]
         nstructs = len(struct_types[0])
         contact_idx_dict = {}
-        i = nstructs
-        for j in xrange(nmeas):
-            for s in xrange(nstructs):
-                    if contact_sites[s][j, idx]:
-                        ncontacts += 1
-                        contact_idx_dict[i] = (j, s)
-                        contact_idx_dict[(j,s)] = i
-                        i += 1
-        A = zeros([nstructs + ncontacts, nstructs + ncontacts])
-        b = zeros([nstructs + ncontacts])
-        # We'll start by indexing the reactivity hidden variables by structure
-        for p in xrange(A.shape[0]):
-            for s in xrange(nstructs):
-                if p < nstructs:
-                    A[p,s] = dot(W[:,s], W[:,p])
-                    if p == s:
-                        for s1 in xrange(nstructs):
-                            if s != s1:
-                                A[p,s] += 4*self.lam_reacts*1/bp_dist[s1,s]
-                    else:
-                        A[p,s] -= 4*self.lam_reacts*1/bp_dist[p,s]
+        if self.use_motif_decomposition:
+            nmotifs = 0
+            motif_idx_dict = {}
+            for midx in xrange(len(self.pos_motif_map)):
+                if (idx, midx) in self.pos_motif_map:
+                    motif_idx_dict[nmotifs] = midx
+                    nmotifs += 1
 
-                else:
-                    j, s2 = contact_idx_dict[p]
-                    A[p,s] = W[j,s]*W[j,s2]
-        for s in xrange(nstructs):
-            b[s] = -prior_factors[struct_types[idx][s]]/Psi_inv[0,0] + dot(W[:,s], data[:,idx])
-        # Then, the contact maps. No Lapacian priors here, we use Gaussian (i.e. 2-norm) priors
-        # for easier calculations
-        for p in xrange(A.shape[0]):
+            # Some helper functions to make the code more compact
+            def motifidx(midx):
+                return self.pos_motif_map[(idx, motif_idx_dict[midx])]
+            def check_contact_site(midx, j):
+                for m in motifidx(midx):
+                    if contact_sites[m][j, idx]:
+                        return True
+                return False
+
+            i = nmotifs
+            for j in xrange(nmeas):
+                for s in xrange(nmotifs):
+                        if check_contact_site(s, j):
+                            ncontacts += 1
+                            contact_idx_dict[i] = (j, s)
+                            contact_idx_dict[(j,s)] = i
+                            i += 1
+
+            dim = nmotifs + ncontacts
+        else:
+            i = nstructs
             for j in xrange(nmeas):
                 for s in xrange(nstructs):
-                    if contact_sites[s][j, idx]:
-                        if p < nstructs:
-                            #A[p, contact_idx_dict[(j,s)]] = W[j,s]*W[j,p]
-                            A[p, contact_idx_dict[(j,s)]] = W[j,p]
+                        if contact_sites[s][j, idx]:
+                            ncontacts += 1
+                            contact_idx_dict[i] = (j, s)
+                            contact_idx_dict[(j,s)] = i
+                            i += 1
+            dim = nstructs + ncontacts
+        A = zeros([dim, dim])
+        b = zeros([dim])
+        def fill_matrices(A, b, contact_prior):
+            if self.use_motif_decomposition:
+                nstruct_elems = nmotifs
+            else:
+                nstruct_elems = nstructs
+            # We'll start by indexing the reactivity hidden variables by structure
+            for p in xrange(A.shape[0]):
+                for s in xrange(nstruct_elems):
+                    if p < nstruct_elems:
+                        if self.use_motif_decomposition:
+                            for j in xrange(nmeas):
+                                A[p,s] += W[j,motifidx(p)].sum()*W[j,motifidx(s)].sum()
                         else:
-                            j2, s2 = contact_idx_dict[p]
-                            if j == j2:
-                                #A[p,contact_idx_dict[(j,s)]] = W[j,s]
-                                if s == s2:
-                                    A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (contact_prior_factor)/Psi_inv[0,0]
+                            A[p,s] = dot(W[:,s], W[:,p])
+                            if p == s:
+                                for s1 in xrange(nstruct_elems):
+                                    if s != s1:
+                                        A[p,s] += 4*self.lam_reacts*1/bp_dist[s1,s]
+                            else:
+                                A[p,s] -= 4*self.lam_reacts*1/bp_dist[p,s]
+
+                    else:
+                        j, s2 = contact_idx_dict[p]
+                        if self.use_motif_decomposition:
+                            A[p,s] = W[j,motifidx(s)].sum()*W[j,motifidx(s2)].sum()
+                        else:
+                            A[p,s] = W[j,s]*W[j,s2]
+            for s in xrange(nstruct_elems):
+                if self.use_motif_decomposition:
+                    b[s] = -prior_factors[struct_types[idx][motifidx(s)[0]]]/Psi_inv[0,0]
+                    for j in xrange(nmeas):
+                        b[s] += W[j,motifidx(s)].sum()*data[j,idx]
+                else:
+                    b[s] = -prior_factors[struct_types[idx][s]]/Psi_inv[0,0] + dot(W[:,s], data[:,idx])
+            # Then, the contact maps. No Lapacian priors here, we use Gaussian (i.e. 2-norm) priors
+            # for easier calculations
+            for p in xrange(A.shape[0]):
+                for j in xrange(nmeas):
+                    for s in xrange(nstruct_elems):
+                        if self.use_motif_decomposition:
+                            if check_contact_site(s, j):
+                                if p < nstruct_elems:
+                                    A[p, contact_idx_dict[(j,s)]] = W[j,motifidx(p)].sum()
                                 else:
-                                    A[p,contact_idx_dict[(j,s)]] = W[j2,s2]*W[j,s]
-        for j in xrange(nmeas):
-            for s in xrange(nstructs):
-                if contact_sites[s][j, idx]:
-                    #b[contact_idx_dict[(j,s)]] = -contact_prior_factor/(Psi_inv[0,0]*W[j,s]) + data[j,idx]
-                    #b[contact_idx_dict[(j,s)]] = -contact_prior_factor/(Psi_inv[0,0]) + data[j,idx]
-                    b[contact_idx_dict[(j,s)]] = data[j,idx]*W[j,s]
+                                    j2, s2 = contact_idx_dict[p]
+                                    if j == j2:
+                                        #A[p,contact_idx_dict[(j,s)]] = W[j,s]
+                                        if s == s2:
+                                            A[p,contact_idx_dict[(j,s)]] = W[j,motifidx(s)].sum()**2 + (contact_prior)/Psi_inv[0,0]
+                                        else:
+                                            A[p,contact_idx_dict[(j,s)]] = W[j2,motifidx(s2)].sum()*W[j,motifidx(s)].sum()
+
+                        else:
+                            if contact_sites[s][j, idx]:
+                                if p < nstruct_elems:
+                                    A[p, contact_idx_dict[(j,s)]] = W[j,p]
+                                else:
+                                    j2, s2 = contact_idx_dict[p]
+                                    if j == j2:
+                                        if s == s2:
+                                            A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (contact_prior)/Psi_inv[0,0]
+                                        else:
+                                            A[p,contact_idx_dict[(j,s)]] = W[j2,s2]*W[j,s]
+            for j in xrange(nmeas):
+                for s in xrange(nstruct_elems):
+                    if self.use_motif_decomposition:
+                        if check_contact_site(s, j):
+                            b[contact_idx_dict[(j,s)]] = data[j,idx]*W[j,motifidx(s)].sum()
+                    else:
+                        if contact_sites[s][j, idx]:
+                            #b[contact_idx_dict[(j,s)]] = -contact_prior_factor/(Psi_inv[0,0]*W[j,s]) + data[j,idx]
+                            #b[contact_idx_dict[(j,s)]] = -contact_prior_factor/(Psi_inv[0,0]) + data[j,idx]
+                            b[contact_idx_dict[(j,s)]] = data[j,idx]*W[j,s]
+            return A, b
+
+        A, b = fill_matrices(A, b, contact_prior_factor)
         print 'Solving the linear equation system'
         # same variable names as in soft_EM_vars for consistency
         E_d__obs = zeros([nstructs])
@@ -574,35 +655,49 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         add_rand = False
         tries = 0
         while not solved:
-            bounds = [(0.001, data.max())]*nstructs + [(-10,10)]*(A.shape[0] - nstructs)
-            x0 = [0.002 if struct_types[idx][s] == 'p' else 1. for s in xrange(nstructs)] + [0.0 for i in xrange(A.shape[0] - nstructs)]
+            solved = True
+            if self.use_motif_decomposition:
+                bounds = [(0.001, data.max())]*nmotifs + [(-10,10)]*(A.shape[0] - nmotifs)
+                x0 = [0.002 if struct_types[idx][motifidx(s)[0]] == 'p' else 1. for s in xrange(nmotifs)] + [0.0 for i in xrange(A.shape[0] - nmotifs)]
+            else:
+                bounds = [(0.001, data.max())]*nstructs + [(-10,10)]*(A.shape[0] - nstructs)
+                x0 = [0.002 if struct_types[idx][s] == 'p' else 1. for s in xrange(nstructs)] + [0.0 for i in xrange(A.shape[0] - nstructs)]
             Acvx = cvxmat(A)
             bcvx = cvxmat(b)
             n = Acvx.size[1]
             I = cvxmat(0.0, (n,n))
-            I[::n+1] = -1.0
-            G = cvxmat([-I, I])
-            h = cvxmat((2*n)*[0.0])
-            dims = {'l':n, 'q':[n], 's':[]}
-            x = array(solvers.coneqp(Acvx.T*Acvx, -Acvx.T*bcvx, G, h, dims)['x'])
-            #x = optimize.fmin_slsqp(f, x0, fprime=fprime, bounds=bounds, iter=1000)
-            #x = linalg.solve(A, b)
-            solved = True
-            for s in xrange(nstructs):
-                if x[s] <= 0.001:
-                    E_d__obs[s] = 0.0001*rand()
-                else:
-                    E_d__obs[s] = x[s]
-                if add_rand:
-                    E_d__obs[s] += rand()*0.0001
+            I[::n+1] = 1.0
+            G = cvxmat([-I])
+            h = cvxmat(n*[0.001])
+            dims = {'l':n, 'q':[], 's':[]}
+            try:
+                #x = array(solvers.coneqp(Acvx.T*Acvx, -Acvx.T*bcvx, G, h, dims, None, None, {'x':cvxmat(x0)})['x'])
+                x = optimize.fmin_slsqp(f, x0, fprime=fprime, bounds=bounds, iter=2000)
+                #x = linalg.solve(A, b)
+            except ValueError:
+                solved=False
+            if self.use_motif_decomposition:
+                for s in xrange(nmotifs):
+                    if x[s] <= 0.001:
+                        E_d__obs[motifidx(s)] = rand(len(motifidx(s)))*0.0001
+                    else:
+                        E_d__obs[motifidx(s)] = x[s]
+                        E_d__obs[motifidx(s)] += rand(len(motifidx(s)))*0.0001 
+                    if add_rand:
+                        E_d__obs[motifidx(s)] += rand(len(motifidx(s)))*0.0001 
+            else:
+                for s in xrange(nstructs):
+                    if x[s] <= 0.001:
+                        E_d__obs[s] = 0.0001*rand()
+                    else:
+                        E_d__obs[s] = x[s]
+                    if add_rand:
+                        E_d__obs[s] += rand()*0.0001
+
             E_ddT__obs = dot(mat(E_d__obs).T, mat(E_d__obs))
             if (E_ddT__obs < 0).ravel().sum() > 1:
                 solved = False
-            try:
-                linalg.inv(E_ddT__obs)
-            except LinAlgError:
-                print 'E_ddT__obs not invertible'
-                solved = False
+
             if not solved:
                 # This means that we need to rescale the contact prior
                 tries += 1
@@ -614,41 +709,41 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     print 'Could not figure out a good contact prior'
                     print 'Blaming E_ddT__obs singularities on data similarity'
                     print 'Adding a bit of white noise to alleviate'
-                    for p in xrange(nstructs, A.shape[0]):
-                        j, s = contact_idx_dict[p]
-                        A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (contact_prior_factor)/Psi_inv[0,0]
-
-                    for j in xrange(nmeas):
-                        for s in xrange(nstructs):
-                            if contact_sites[s][j, idx]:
-                                b[contact_idx_dict[(j,s)]] = W[j,s]*data[j,idx]
+                    A, b = fill_matrices(A, b, contact_prior_factor)
                     add_rand = True
 
                    
                 print 'MAP system was not solved properly retrying with different contact priors'
                 print 'Number of contacts is %s' % ncontacts
                 print 'Changing prior factor to %s' % (new_prior_factor)
-                print x
-                for p in xrange(nstructs, A.shape[0]):
-                    j, s = contact_idx_dict[p]
-                    A[p,contact_idx_dict[(j,s)]] = W[j,s]**2 + (new_prior_factor)/Psi_inv[0,0]
+                A, b = fill_matrices(A, b, new_prior_factor)
 
+        if self.use_motif_decomposition:
+            for s in xrange(nmotifs):
                 for j in xrange(nmeas):
-                    for s in xrange(nstructs):
-                        if contact_sites[s][j, idx]:
-                            b[contact_idx_dict[(j,s)]] = W[j,s]*data[j,idx]
+                    for i in motifidx(s):
+                        if contact_sites[i][j,idx]:
+                            E_c__obs[j,i] = x[s]
+                        else:
+                            E_c__obs[j,i] = nan
 
-        for s in xrange(nstructs):
-            for j in xrange(nmeas):
-                if contact_sites[s][j, idx]:
-                    E_c__obs[j, s] = x[s]
-                else:
-                    E_c__obs[j, s] = nan
+            for s in xrange(nmotifs):
+                for j in xrange(nmeas):
+                    for i in motifidx(s):
+                        if contact_sites[i][j,idx]:
+                            E_c__obs[j,i] += x[contact_idx_dict[(j,s)]]
+        else:
+            for s in xrange(nstructs):
+                for j in xrange(nmeas):
+                    if contact_sites[s][j,idx]:
+                        E_c__obs[j,s] = x[s]
+                    else:
+                        E_c__obs[j,s] = nan
 
-        for s in xrange(nstructs):
-            for j in xrange(nmeas):
-                if contact_sites[s][j, idx]:
-                    E_c__obs[j, s] += x[contact_idx_dict[(j,s)]]
+            for s in xrange(nstructs):
+                for j in xrange(nmeas):
+                    if contact_sites[s][j,idx]:
+                        E_c__obs[j,s] += x[contact_idx_dict[(j,s)]]
 
         sigma_d__obs = mat(sqrt(E_ddT__obs.diagonal()))
         return mat(E_d__obs), E_ddT__obs, sigma_d__obs, E_c__obs
@@ -882,12 +977,10 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         W = zeros([nmeas, nstructs])
         Psi_inv = zeros(Psi.shape)
         Psi_inv_sum = zeros([nmeas, nmeas])
-        E_ddT_sum = zeros([nstructs, nstructs])
 
         for i in xrange(npos):
             Psi_inv[i,:,:] = linalg.inv(Psi[i,:,:])
             Psi_inv_sum += linalg.inv(Psi[i,:,:])
-            E_ddT_sum += E_ddT[:,:,i]
 
         Psi_inv_sum = linalg.inv(Psi_inv_sum)
 
@@ -897,8 +990,10 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         if len(energies) > 0:
             print 'Solving weights'
             # ========= Using CVXOPT ====================
-            E_d_proj = mat(zeros([nstructs,1]))
-            for j in xrange(nmeas):
+            frame = inspect.currentframe()
+            args, _, _, argvals = inspect.getargvalues(frame)
+            def par_fun(j, *args):
+                E_d_proj = mat(zeros([nstructs,1]))
                 E_d_proj = 0
                 E_ddT_Psi_inv = zeros(E_ddT[:,:,0].shape)
                 E_d_c_j = self._E_d_c_j(E_d, E_c, j, contact_sites)
@@ -918,10 +1013,19 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 A = cvxmat(1.0, (1, nstructs))
                 b = cvxmat(1.0)
                 p = cvxmat(E_d_proj)
-                sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[j,:])})['x'])
-                #sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
-                W[j,:] = sol.T
-                W[j, (sol.T <= 0)[0]] = 1e-10
+                #sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[j,:])})['x'])
+                sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
+                sol[sol <= 0] = 1e-10
+                return sol.T
+
+            if self.njobs != None:
+                sys.modules[__name__].par_fun = par_fun
+                resvecs = joblib.Parallel(n_jobs=self.njobs)(joblib.delayed(par_fun)(j, *argvals) for j in xrange(nmeas))
+                for j, sol in enumerate(resvecs):
+                    W[j,:] = sol
+            else:
+                for j in xrange(nmeas):
+                    W[j,:] = par_fun(j, *argvals)
             # ========= End using CVXOPT ================
             if G_constraint != None:
                 # Constrain by using G_constraint
@@ -962,16 +1066,19 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     sum_indices = (1-cum_weights[i])/W[i,indices].sum()
                     for idx in indices:
                         W[i,idx] *= sum_indices
-        #W = dot(Psi_inv_sum, dot(Psi_data_E_d_T, linalg.inv(E_ddT_sum)))
         return W
 
     def _calculate_MLE_std(self, W, Psi_inv, E_ddT):
         I_W = zeros(W.shape)
-        for i in xrange(Psi_inv.shape[0]):
-            for j in xrange(I_W.shape[0]):
-                for s in xrange(I_W.shape[1]):
-                    for sp in xrange(I_W.shape[1]):
-                        I_W[j,s] += Psi_inv[i,0,0]*E_ddT[s,sp,i]
+        Psi_inv_vec = array([[Psi_inv[i,0,0] for i in xrange(Psi_inv.shape[0])]])
+        for j in xrange(I_W.shape[0]):
+            for s in xrange(I_W.shape[1]):
+                I_W[j,s] = dot(Psi_inv_vec, E_ddT.T[:,:,s]).sum()
+            """
+            for s in xrange(I_W.shape[1]):
+                for sp in xrange(I_W.shape[1]):
+                    I_W[j,s] += dot(Psi_inv_vec, E_ddT[s,sp,:])
+            """
         I_W[I_W == 0] = 1e-100
         return sqrt(1/I_W)
 
@@ -1017,7 +1124,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             return linalg.det(Psi)
 
-    def analyze(self, max_iterations=100, tol=1e-4, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, n_jobs=None, return_loglikes=False, hard_em=False, post_model=False):
+    def analyze(self, max_iterations=100, tol=1e-4, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, return_loglikes=False, hard_em=False, post_model=False):
         # Sometimes, e.g. model selection, we want just to test a subset of structures, we do that via select_struct_indices
         # to indicate the structure indices that we want to try
         if len(select_struct_indices) > 0:
@@ -1135,9 +1242,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         E_d = mat(zeros([nstructs, npos]))
         E_c = zeros([nmeas, nstructs, npos])
         sigma_d= mat(zeros([nstructs, npos]))
-        E_ddT_sum = mat(zeros([nstructs, nstructs]))
         E_ddT_i = mat(zeros([nstructs, nstructs]))
-        data_E_d_sum = mat(zeros([nmeas, nstructs]))
         data_dataT = zeros([nmeas, nmeas, npos])
         E_ddT = zeros([nstructs, nstructs, npos])
         E_ddT_inv = zeros([nstructs, nstructs, npos])
@@ -1163,11 +1268,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             # E-step
             loglike = -npos*nmeas/2.*log(2.*pi)
             if hard_em:
-                if n_jobs != None:
+                if self.njobs != None:
                     def par_fun(i):
                         return self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist)
                     sys.modules[__name__].par_fun = par_fun
-                    restuples = joblib.Parallel(n_jobs=n_jobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
+                    restuples = joblib.Parallel(n_jobs=self.njobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
 
                 else:
                     restuples = []
@@ -1175,32 +1280,53 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         restuples.append(self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist))
 
             else:
-                if n_jobs != None:
+                if self.njobs != None:
                     def par_fun(i):
                         return self.soft_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, nsim, nsim/5, measindices, use_struct_clusters)
                     sys.modules[__name__].par_fun = par_fun
-                    restuples = joblib.Parallel(n_jobs=n_jobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
+                    restuples = joblib.Parallel(n_jobs=self.njobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
                 else:
                     restuples = []
                     for i in xrange(npos):
                         restuples.append(self.soft_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, nsim, nsim/5, measindices, use_struct_clusters))
+
             for i, tup in enumerate(restuples):
                 E_d_i, E_ddT_i, sigma_d_i, E_c_i = tup
                 E_d[:,i] = E_d_i.T
                 sigma_d[:,i] = sigma_d_i.T
                 E_c[:,:,i] = E_c_i
                 E_ddT[:,:,i] = E_ddT_i
-                data_E_d[:,:,i] = self._dot_E_d_i(data[:,i], E_d[:,i], E_c[:,:,i], i, contact_sites, T=True)
-                E_ddT_sum += E_ddT_i
-                data_E_d_sum += self._dot_E_d_i(data[:,i], E_d[:,i], E_c[:,:,i], i, contact_sites, T=True)
-                #data_E_d += dot(data[:,i], E_d[:,i].T)
-                # Don't forget to calculate the log-likelihood to track progress!
-                C = -dot(dot(data[:,i].T, Psi_inv[i,:,:]), data[:,i])
-                C += 2.*self._dot_E_d_i(dot(dot(data[:,i].T, Psi_inv[i,:,:]), W), E_d[:,i], E_c[:,:,i], i, contact_sites)
-                #C += -2.*dot(dot(dot(data[:,i].T, Psi_inv), W), E_d[:,i])
-                C += -(dot(dot(dot(W.T, Psi_inv[i,:,:]), W), E_ddT_i)).diagonal().sum()
-                loglike += 0.5 * (C - npos*log(self._get_determinant(Psi[i,:,:])))
+
+            #imshow(E_d, vmax=E_d.mean(), vmin=0, cmap=get_cmap('Greys'))
+
+
+            if self.njobs != None:
+                def par_fun(i):
+                    B = self._dot_E_d_i(data[:,i], E_d[:,i], E_c[:,:,i], i, contact_sites, T=True)
+                    C = -dot(dot(data[:,i].T, Psi_inv[i,:,:]), data[:,i])
+                    C += 2.*self._dot_E_d_i(dot(dot(data[:,i].T, Psi_inv[i,:,:]), W), E_d[:,i], E_c[:,:,i], i, contact_sites)
+                    C += -(dot(dot(dot(W.T, Psi_inv[i,:,:]), W), E_ddT_i)).diagonal().sum()
+                    l = 0.5 * (C - npos*log(self._get_determinant(Psi[i,:,:])))
+                    return B, l
+                sys.modules[__name__].par_fun = par_fun
+                restuples = joblib.Parallel(n_jobs=self.njobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
+                for i, tup in enumerate(restuples):
+                    B, l = tup
+                    data_E_d[:,:,i] = B
+                    loglike += l
+            else:
+                for i in xrange(npos):
+                    data_E_d[:,:,i] = self._dot_E_d_i(data[:,i], E_d[:,i], E_c[:,:,i], i, contact_sites, T=True)
+                    #data_E_d += dot(data[:,i], E_d[:,i].T)
+                    # Don't forget to calculate the log-likelihood to track progress!
+                    C = -dot(dot(data[:,i].T, Psi_inv[i,:,:]), data[:,i])
+                    C += 2.*self._dot_E_d_i(dot(dot(data[:,i].T, Psi_inv[i,:,:]), W), E_d[:,i], E_c[:,:,i], i, contact_sites)
+                    #C += -2.*dot(dot(dot(data[:,i].T, Psi_inv), W), E_d[:,i])
+                    C += -(dot(dot(dot(W.T, Psi_inv[i,:,:]), W), E_ddT_i)).diagonal().sum()
+                    loglike += 0.5 * (C - npos*log(self._get_determinant(Psi[i,:,:])))
             # M-step
+            """
+            # This is no longer necessary since we are not using the closed-form solution of W
             try:
                 for i in xrange(npos):
                     E_ddT_inv[:,:,i] = linalg.inv(E_ddT[:,:,i])
@@ -1212,6 +1338,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 print 'E[d*dT | data][:,i]'
                 print E_d[:,i]
                 raise ValueError('E[d*dT | data] matrix is singular!')
+            """
 
             # Given our expected reactivities, now assign the weights
             W_new = self._assign_W(E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals)
@@ -1241,7 +1368,6 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     Psi_inv[i,:,:] = linalg.inv(Psi[i,:,:])
                 except LinAlgError:
                     pdb.set_trace()
-            print 'Finished iteration %s with log-likelihood %s' % (t, loglike)
             # Do post-facto SHAPE-directed modeling, if asked
             didpostmodel = False
             if post_model:
@@ -1293,6 +1419,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
             loglike += logpriors
             # Check if we are done
+            print 'Finished iteration %s with log-likelihood %s' % (t, loglike)
             if not didpostmodel:
                 print t
                 t += 1
@@ -1311,7 +1438,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     E_ddT_opt = E_ddT.copy()
                     adaptive_factor *= 2
 
-                if False and abs(loglike - old_loglike) < tol or t+1 == max_iterations:
+                if abs(loglike - old_loglike) < tol or t+1 == max_iterations:
                     break
                 if loglike < old_loglike:
                     print 'Warning: Likelihood value is decreasing. This is probably due to:'
@@ -1334,8 +1461,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             lhood = max_loglike
         self.W, self.Psi, self.E_d, self.E_c, self.sigma_d, self.E_ddT= asarray(W_opt), asarray(Psi_opt), asarray(E_d_opt), asarray(E_c_opt), asarray(sigma_d_opt), asarray(E_ddT_opt)
 
+
+        print 'W_std calculation started'
         # Calculate the standard deviation of the MLE
         self.W_std = self._calculate_MLE_std(W, Psi_inv, E_ddT)
+        print 'W_std calculation finished'
 
         # Interpolate for the rest of the data if we clustered
         if cluster_data_factor:
@@ -1370,12 +1500,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
 class FullBayesAnalysis(MappingAnalysisMethod):
 
-    def __init__(self, data, structures, backend='pickle', dbname='ba_traces.pickle', mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, cutoff=0):
+    def __init__(self, data, structures, backend='pickle', dbname='ba_traces.pickle', mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, cutoff=0, njobs=None):
         MappingAnalysisMethod.__init__(self, data, structures, energies, mutpos, c_size, cutoff)
         self.concentrations = concentrations
         self.kds = kds
         self.backend=backend
         self.dbname=dbname
+        self.njobs = njobs
 
     def _get_FAobj(self):
         if 'fa' not in self.__dict__:

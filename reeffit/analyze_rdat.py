@@ -14,55 +14,79 @@ from plot_utils import *
 from map_analysis_utils import *
 from random import choice, sample
 import mapping_analysis
+from itertools import chain
 
 parser = argparse.ArgumentParser()
 parser.prog = 'reeffit'
+
+# General options
 parser.add_argument('rdatfile', type=argparse.FileType('r'), help='The RDAT file that has the multi-dimensional chemical mapping data')
 parser.add_argument('outprefix', type=str, help='Prefix (e.g. directory) that all resulting reports, plot files, etc. will have')
+parser.add_argument('--priorweights', type=str, default='rnastructure', help='Algorithm to use for starting structure weights. Can be "rnastructure", "viennarna", and "uniform"')
+parser.add_argument('--njobs', type=int, default=None, help='For soft EM analysis. Number of parallel jobs to run the E-step on')
+
+# Input structures options
 parser.add_argument('--structfile', default=None, type=argparse.FileType('r'), help='Text files with structures to analyze, one per line, in dot-bracket notation')
 parser.add_argument('--clusterfile', default=None, type=argparse.FileType('r'), help='File with clusters of structures: one structure per line, with tab-delimited fields. Format is cluster_id, dot-bracket structure, comma-separated energies per cluster' )
 parser.add_argument('--medoidfile', default=None, type=argparse.FileType('r'), help='File specifying the medoid structures of each cluster. Must also specify a clusterfile.')
 parser.add_argument('--structset', default=None, type=str, help='Subset of structures in the specified structfile to use in the analysis. Each subset is identified by a "header" specified after a hash (#) preceding the set of structures. This option will search all headers for structset and analyze the data with those structures. Used in worker mode.')
-parser.add_argument('--nsubopt', default=100, type=int, help='For model selection. Number of maximum suboptimal structures to take from each sequence\'s structural ensemble in the RDAT file')
-parser.add_argument('--nsim', default=1000, type=int, help='Number of simulations used for each E-step when performing soft EM.')
+
+# Pre-processing options
 parser.add_argument('--cutoff', default=0, type=int, help='Number of data points and nucleotides to cut off from the beginning and end of the data and sequences: these will not be used in the analysis. Useful to avoid saturated "outliers" in the data.')
 parser.add_argument('--start', default=None, type=int, help='Seqpos starting position of the data and sequences from where to analyze. Useful to focus the analysis on a particular location. Must specify both start and end options.')
 parser.add_argument('--end', default=None, type=int, help='Seqpos ending position of the data and sequences to analyze. Useful to focus the analysis on a particular location. Must specify both start and end options.')
+parser.add_argument('--nomutrepeat', default=False, action='store_true', help='Skip repeating mutants')
+parser.add_argument('--clipzeros', default=False, action='store_true', help='Clip data to non-zero regions')
+parser.add_argument('--csize', type=int, default=3, help='Number of sequence positions to be allowed for contact sites.')
+parser.add_argument('--boxnormalize', default=False, action='store_true', help='Perform box-plot normalization of the data. Useful for capillary sequencing datasets')
+
+# Model selection options
+parser.add_argument('--modelselect', type=str, default=None, help='Model selection mode. Can be one of "heuristic", "mc" (Monte Carlo, including MCMC), and "cv"')
+parser.add_argument('--nsubopt', default=100, type=int, help='For model selection. Number of maximum suboptimal structures to take from each sequence\'s structural ensemble in the RDAT file')
 parser.add_argument('--greedyiter', default=10, type=int, help='For heuristic model selection. Number of greedy iterations in which REEFFIT tries to add more structures to make the model better.')
 parser.add_argument('--nopriorswap', action='store_true', help='For heuristic model selection. Do not swap structure medoids in each cluster, take the default medoids found by centrality maximization')
 parser.add_argument('--nopseudoenergies', action='store_true', help='For heuristic model selection. Do not use pseudoenergies (i.e. SHAPE-directed modeling) to score the structures. Structures will be scored using regular RNAstructure energies, with no data.')
-parser.add_argument('--modelselect', type=str, default=None, help='Model selection mode. Can be one of "heuristic" or "mc" (Monte Carlo, including MCMC)')
-parser.add_argument('--hardem', default=False, action='store_true', help='Perform hard EM instead of soft EM, finding a MAP of the hidden reactivities, rather than simulating from the posterior. This makes REEFFIT run considerably faster, but does not yield a rigorous, posterior distribution estimation of the hidden reactivities of each structure.')
-parser.add_argument('--energydelta', default=None, type=float, help='Kcal/mol free energy limit that the structure weights are allowed to deviate from the initial weights.')
-parser.add_argument('--refineiter', default=10, type=int, help='Maximum number of EM iterations to perform')
 parser.add_argument('--structest', default='hclust', type=str, help='For heuristic model selection. Method for estimating the number of structures underlying the data, and later used for clustering. Available methods are "hclust" (hierarchical clustering) and "fa" (standard, gaussian factor analysis)')
-parser.add_argument('--clusterdatafactor', type=int, default=None, help='For clustering the data to reduce dimensionality (useful for large datasets with lots of redundant measurements). Describes the approximate number of clusters for clustering the data')
-parser.add_argument('--bootstrap', type=int, default=0, help='Number of bootstrap iterations to perform')
-parser.add_argument('--titrate', type=str, default=None, help='For morph-and-map experiments. Name of chemical titrated. Must also specify kdfile when using this option.')
-parser.add_argument('--nomutrepeat', default=False, action='store_true', help='Skip repeating mutants')
-parser.add_argument('--clipzeros', default=False, action='store_true', help='Clip data to non-zero regions')
-parser.add_argument('--postmodel', default=False, action='store_true', help='Perform SHAPE-directed modeling after each EM iteration using the calculated hidden reactivities for each structures. Useful if the hidden reactivities do not match well with the prior structures')
 parser.add_argument('--worker', default=False, action='store_true', help='Worker mode (non-verbose, simple output). Used for MC model selection.')
-parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
-parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
-parser.add_argument('--detailedplots', default=False, action='store_true', help='Plots log-likelihood trace, all predicted data vs real data separately, and comparison plots between initial and final structure weights')
-parser.add_argument('--boxnormalize', default=False, action='store_true', help='Perform box-plot normalization of the data. Useful for capillary sequencing datasets')
-parser.add_argument('--dpi', type=int, default=200, help='DPI resolution for plots')
-parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits')
-parser.add_argument('--priorweights', type=str, default='rnastructure', help='Algorithm to use for starting structure weights. Can be "rnastructure", "viennarna", and "uniform"')
-parser.add_argument('--interpreter', type=str, default='python', help='For MC model selection. Python interpreter to use for the worker files')
-parser.add_argument('--njobs', type=int, default=None, help='For soft EM analysis. Number of parallel jobs to run the E-step on')
-parser.add_argument('--csize', type=int, default=3, help='Number of sequence positions to be allowed for contact sites.')
+parser.add_argument('--crossvalidate', default=0, type=int, help='Number of cross-validations to select the reactivity and weight regularization tuning parameters (lam_reacts and lam_weights)')
+parser.add_argument('--maxlamreacts', type=int, default=10, help='For cross-validation setup. Maximum value of lam_reacts to try')
+parser.add_argument('--maxlamweights', type=int, default=10, help='For cross-validation setup. Maximum value of lam_weights to try')
 parser.add_argument('--msnsim', type=int, default=100, help='For MC model selection. Number of Monte Carlo simulations per worker')
 parser.add_argument('--msnworkers', type=int, default=10, help='For MC model selection. Number of workers.')
 parser.add_argument('--msmaxsamples', type=int, default=inf, help='For MC model selection. Maximum number of structures per sample in MC simulation')
 parser.add_argument('--msworkerformat', type=str, default='sh', help='For MC model selection. File format of worker files. Can be "sh" (for simple shell script) and "gridengine" (for use with grid engine')
+parser.add_argument('--interpreter', type=str, default='python', help='For MC model selection. Python interpreter to use for the worker files')
+
+# Fitting options
+parser.add_argument('--nsim', default=1000, type=int, help='Number of simulations used for each E-step when performing soft EM.')
+parser.add_argument('--refineiter', default=10, type=int, help='Maximum number of EM iterations to perform')
+parser.add_argument('--hardem', default=False, action='store_true', help='Perform hard EM instead of soft EM, finding a MAP of the hidden reactivities, rather than simulating from the posterior. This makes REEFFIT run considerably faster, but does not yield a rigorous, posterior distribution estimation of the hidden reactivities of each structure.')
+parser.add_argument('--energydelta', default=None, type=float, help='Kcal/mol free energy limit that the structure weights are allowed to deviate from the initial weights -- this is a hard limit, as opposed to lamweights option.')
+parser.add_argument('--clusterdatafactor', type=int, default=None, help='For clustering the data to reduce dimensionality (useful for large datasets with lots of redundant measurements). Describes the approximate number of clusters for clustering the data')
+parser.add_argument('--bootstrap', type=int, default=0, help='Number of bootstrap iterations to perform')
+parser.add_argument('--titrate', type=str, default=None, help='For morph-and-map experiments. Name of chemical titrated. Must also specify kdfile when using this option.')
+parser.add_argument('--postmodel', default=False, action='store_true', help='Perform SHAPE-directed modeling after each EM iteration using the calculated hidden reactivities for each structures. Useful if the hidden reactivities do not match well with the prior structures')
+parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
+parser.add_argument('--lamreacts', default=0, type=float, help='Regularization parameter controlling the similarity between reactivities of similar structures. Higher values will force similar reactivities between structures, depending on their base pair distance.')
+parser.add_argument('--lamweights', default=0, type=float, help='Regularization parameter controlling how far from the initial weight estimates (e.g. from RNAstructure or ViennaRNA). Higher values will force weights to be closer to initial estimates')
+parser.add_argument('--lamfile', default=None, type=argparse.FileType('r'), help='File with results of a cross-validation run. Format is lines with cross_validation_error, lam_reacts, lam_weights; tab-delimited. Values with lowest cross_validation_error will be taken for values of lam_reacts and lam_weights.')
+parser.add_argument('--decompose', action='store_true', default=False, help='Decompose structures into a set of overlapping motifs to reduce number of variables to fit.')
+parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits')
+
+# Plotting options
+parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
+parser.add_argument('--detailedplots', default=False, action='store_true', help='Plots log-likelihood trace, all predicted data vs real data separately, and comparison plots between initial and final structure weights')
+parser.add_argument('--dpi', type=int, default=200, help='DPI resolution for plots')
 
 args = parser.parse_args()
 
 # Global variables
-model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic'}
+model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic', 'cv':'Cross-validation'}
 worker_file_formats = ['gridengine', 'sh']
+carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
+        'bootstrap', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
+        'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize']
+MAX_STRUCTURES_PLOT = 10
 
 print 'Parsing RDAT'
 rdat = RDATFile()
@@ -91,6 +115,53 @@ last_seqpos = 0
 def valid(seq):
     return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
 
+def make_struct_figs(structures, fprefix, indices=None):
+    if indices == None:
+        indices = range(len(structures))
+    for i, s in enumerate(structures):
+        print s
+        VARNA.cmd(mutants[0], remove_non_cannonical(s, mutants[0]), args.outprefix + fprefix + 'structure%s.svg' % indices[i], options={'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'})
+
+def carry_on_option_string():
+    options = ''
+    for opt in carry_on_options:
+        val = args.__dict__[opt]
+        if val != None:
+            if type(val) == bool:
+                if val:
+                    options += ' --%s ' % opt
+            else:
+                options += ' --%s=%s ' % (opt, val)
+    return options
+
+def prepare_model_select_simulation_structure_file(idx, nsim):
+    sf = open('%sstructures%s.txt' % (args.outprefix, idx), 'w')
+    for i in xrange(nsim):
+        n = randint(2, min(args.msmaxsamples, len(structures)))
+        sf.write('#%s\n' % i)
+        sf.write('\n'.join(set(sample(structures, n))))
+        if i < nsim - 1:
+            sf.write('\n')
+    sf.close()
+    return sf.name
+
+def prepare_mc_worker_file(idx, nsim, simfilename):
+    wf = open('%smc_worker%s.sh' % (args.outprefix, idx), 'w')
+    general_options = '%s %sworker_%s --worker --structfile=%s' % (os.path.abspath(args.rdatfile.name), args.outprefix, idx, os.path.abspath(simfilename))
+    general_options += carry_on_option_string()
+    for i in xrange(nsim):
+        wf.write('%s %s %s --structset=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options, i))
+    return wf.name
+
+def prepare_cv_worker_file(idx, all_parameters):
+    wf = open('%scv_worker%s.sh' % (args.outprefix, idx), 'w')
+    general_options = '%s %scross_validation_results.txt --structfile %sall_structures.txt --worker' % (os.path.abspath(args.rdatfile.name), args.outprefix, args.outprefix)
+    general_options += carry_on_option_string()
+    for i in xrange(len(all_parameters)):
+        wf.write('%s %s %s --crossvalidate %s --lamreacts=%s --lamweights=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options, args.crossvalidate, all_parameters[i][0], all_parameters[i][1]))
+    return wf.name
+
+
 for idx, d in enumerate(construct.data):
     if 'warning' in d.annotations:
         continue
@@ -117,7 +188,7 @@ for idx, d in enumerate(construct.data):
             if not valid(sequence):
                 sequence = mutant
             for i, ms in enumerate(mutant):
-                if ms != sequence[i]:# and len(pos) < 1:
+                if ms != sequence[i] and len(pos) < 1:
                     pos.append(i)
                     if label == 'WT':
                         label = '%s%s%s' % (sequence[i], i + construct.offset + 1, mutant[i])
@@ -132,7 +203,7 @@ for idx, d in enumerate(construct.data):
             if not valid(sequence):
                 sequence = mutant
             for i, ms in enumerate(mutant):
-                if ms != sequence[i]:# and len(pos) < 1:
+                if ms != sequence[i] and len(pos) < 1:
                     pos.append(i)
         else:
             pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
@@ -197,6 +268,17 @@ else:
     seqpos_end = len(seqpos_cutoff)
     mutpos_cutoff = mutpos
     seqpos_range = None
+
+if args.lamfile != None:
+    print 'Getting best tunning parameters, lam_reacts and lam_weights, from cross-validation file'
+    min_cv_error = inf
+    for line in args.lamfile.readlines():
+        cv_error, lam_reacts, lam_weights = [float(f) for f in line.strip().split('\t')]
+        if cv_error < min_cv_error:
+            min_cv_error = cv_error
+            args.lam_reacts = lam_reacts
+            args.lam_weights = lam_weights
+    print 'Parameters were lam_reacts=%s, lam_weights=%s' % (args.lam_reacts, args.lam_weights)
 
 if args.structfile != None:
     if args.clusterfile != None:
@@ -275,7 +357,12 @@ else:
 print 'Structures to consider are:'
 for i, s in enumerate(structures):
     print '%s:%s' % (i, s)
-
+"""
+all_struct_file = open('%sall_structures.txt' % args.outprefix, 'w')
+all_struct_file.write('\n'.join(structures))
+all_struct_file.close()
+exit()
+"""
 if args.titrate != None:
     if args.kdfile == None:
         print 'Expected a Kd file when analyzing titrations (the titrate parameter was set), but the kdfile option is not set!'
@@ -297,48 +384,15 @@ if args.titrate != None:
                 kds[linenum,i] = fields[idx]
             line = args.kdfile.readline()
             linenum += 1
-if args.modelselect != None:
-    #energies = get_free_energy_matrix(structures,[m[seqpos_start:seqpos_end] for m in  mutants], algorithm=args.priorweights)
-    energies = get_free_energy_matrix(structures,[m for m in  mutants], algorithm=args.priorweights)
-else:
+#if args.modelselect != None:
+#    #energies = get_free_energy_matrix(structures,[m[seqpos_start:seqpos_end] for m in  mutants], algorithm=args.priorweights)
+#    energies = get_free_energy_matrix(structures,[m for m in  mutants], algorithm=args.priorweights)
+if args.modelselect ==  None or args.modelselect == 'heuristic':
     energies = get_free_energy_matrix(structures, mutants, algorithm=args.priorweights)
-fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize)
+fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs)
+if args.decompose:
+    fa.perform_motif_decomposition()
 unpaired_data, paired_data = fa.set_priors_by_rvs(SHAPE_unpaired_sample, SHAPE_paired_sample)
-if args.clusterfile:
-    fa.set_structure_clusters(structure_clusters, struct_medoid_indices, struct_weights_by_clust=struct_weights_by_clust)
-    W_0 = fa.W
-else:
-    W_0 = calculate_weights(energies)
-
-def prepare_model_select_simulation_structure_file(idx, nsim):
-    sf = open('%sstructures%s.txt' % (args.outprefix, idx), 'w')
-    for i in xrange(nsim):
-        n = randint(2, min(args.msmaxsamples, len(structures)))
-        sf.write('#%s\n' % i)
-        sf.write('\n'.join(set(sample(structures, n))))
-        if i < nsim - 1:
-            sf.write('\n')
-    sf.close()
-    return sf.name
-
-def prepare_worker_file(idx, nsim, simfilename):
-    wf = open('%sworker%s.sh' % (args.outprefix, idx), 'w')
-    general_options = '%s %sworker_%s --worker --structfile=%s' % (os.path.abspath(args.rdatfile.name), args.outprefix, idx, os.path.abspath(simfilename))
-    carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
-            'bootstrap', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
-            'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize']
-    for opt in carry_on_options:
-        val = args.__dict__[opt]
-        if val != None:
-            if type(val) == bool:
-                if val:
-                    general_options += ' --%s ' % opt
-            else:
-                general_options += ' --%s=%s ' % (opt, val)
-
-    for i in xrange(nsim):
-        wf.write('%s %s %s --structset=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options, i))
-    return wf.name
 
 if args.modelselect != None:
     print 'Model selection using %s' % model_selection_names[args.modelselect]
@@ -351,11 +405,43 @@ if args.modelselect != None:
         print 'Worker file format is %s' % args.msworkerformat
         for i in xrange(args.msnworkers):
             sfname = prepare_model_select_simulation_structure_file(i, args.msnsim)
-            prepare_worker_file(i, args.msnsim, sfname)
+            prepare_ms_worker_file(i, args.msnsim, sfname)
         print 'Finished preparing worker files, run them using your scheduler and them use compile_worker_results.py to compile the results'
         exit()
+    if args.modelselect == 'cv':
+        if args.msworkerformat not in worker_file_formats:
+            print 'Unrecognized worker file format %s, aborting!' % args.msworkerformat
+        print 'Preparing worker files for cross-validation tuning of parameters (note, this will use ALL structures)'
+        print 'Number of worker files %s' % args.msnworkers
+        print 'Number of samples per file %s' % args.msnsim
+        print 'Worker file format is %s' % args.msworkerformat
+        structfile = open('%sall_structures.txt' % (args.outprefix), 'w')
+        structfile.write('\n'.join(structures))
+        parameter_grid = []
+        tot_num_tries = args.msnsim*args.msnworkers
+        param_max = max(args.maxlamreacts, args.maxlamweights)
+        param_delta = param_max/sqrt(tot_num_tries)
+        if args.lamweights and args.lamreacts:
+            print 'Cannot specify both lam_weights and lam_reacts when preparing cross-validation files!'
+            exit()
+        if args.lamweights:
+            for i in arange(0, args.maxlamreacts, param_delta):
+                parameter_grid.append((i,args.lamweights))
+        elif args.lamreacts:
+            for j in arange(0, args.maxlamweights, param_delta):
+                parameter_grid.append((args.lamreacts,j))
+        else:
+            for i in arange(0, args.maxlamreacts, param_delta):
+                for j in arange(0, args.maxlamweights, param_delta):
+                    parameter_grid.append((i,j))
+        for i in xrange(args.msnworkers):
+            prepare_cv_worker_file(i, parameter_grid[i:i+args.msnsim])
+        print 'Finished preparing worker files, run them using your scheduler and them use the cross_validation_results.txt file as input to the lamfile option of your full REEFFIT run!'
+        exit()
+
     if args.modelselect in ['heuristic']:
-        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, n_jobs=args.njobs, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect, post_model=args.postmodel)
+        fa.energies = energies
+        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect, post_model=args.postmodel)
         print 'Getting sequence energies'
         energies = get_free_energy_matrix(structures, mutants)
         print 'Getting cluster energies'
@@ -372,15 +458,71 @@ if args.modelselect != None:
         outmedoidsfile.close()
         print 'Plotting PCA structure clusters'
         PCA_structure_plot(structures, assignments, selected_structures)
-        savefig(args.outprefix + 'pca_cluster_plot.png', dpi=300)
+        savefig(args.outprefix + 'pca_cluster_plot_ms.png', dpi=300)
         print 'Done, check out cluster file %s and medoids file %s' % (outclustfile.name, outmedoidsfile.name)
         exit()
 else:
     selected_structures = range(len(structures))
 
+if args.clusterfile:
+    fa.set_structure_clusters(structure_clusters, struct_medoid_indices, struct_weights_by_clust=struct_weights_by_clust)
+    W_0 = fa.W
+else:
+    W_0 = calculate_weights(energies)
+
+
+fa.energies = energies
 nstructs = len(selected_structures)
 nmeas =  data_cutoff.shape[0]
 npos = data_cutoff.shape[1]
+
+#If we are doing cross validation, then do the cross validation and exit
+if args.crossvalidate > 0:
+    print 'Performing %s-fold cross validation for parameters lam_reacts=%s and lam_weights=%s' % (args.crossvalidate, args.lamreacts, args.lamweights)
+    fold_sets = [arange(i, data_cutoff.shape[1], args.crossvalidate) for i in xrange(args.crossvalidate)]
+    cv_errors = []
+    data_comp = data.copy()
+    data_comp[data_comp >= data_comp.mean()] = 1
+    for fold in xrange(args.crossvalidate):
+        cv_indices = [x for x in chain(*[fold_sets [i] for i in xrange(args.crossvalidate) if i != fold])]
+        pred_indices = fold_sets[fold]
+
+        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, njobs=args.njobs)
+        lhood_traces, W_cv, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=cv_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+
+        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, njobs=args.njobs)
+        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W_cv, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=pred_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+
+        data_pred_cv, sigma_pred_cv = fa_cv.calculate_data_pred()
+        data_pred_cv[data_pred_cv >= data_pred_cv.mean()] = 1
+        err = asarray(data_comp[:, pred_indices] - asarray(data_pred_cv))**2/asarray(sigma_pred_cv)**2
+        """
+        print 'Max'
+        print err.max()
+        print 'Min'
+        print err.min()
+        print 'Sum'
+        print err.sum()
+        print 'Mean'
+        print err.mean()
+        figure(1)
+        plot_mutxpos_image(data_pred_cv, sequence, pred_indices, 0, mut_labels)
+        figure(2)
+        plot_mutxpos_image(data_comp[:, pred_indices], sequence, pred_indices, 0, mut_labels)
+        show()
+        print 'Corrected error'
+        #corr_err = array([((e - err.mean())**4)/(err.std()**2) for e in err]).mean() - 3
+        m =  median(err)
+        corr_err = err[err >= m].sum()
+        print corr_err
+        exit()
+        """
+        cv_errors.append(err)
+
+    report = open('%s_results.txt' % args.outprefix,'a')
+    report.write('%s\t%s\t%s\n' % (array(cv_errors).mean(), args.lamreacts, args.lamweights))
+    exit()
+
 
 # Boostrap variables
 Wboot = zeros([nmeas, nstructs, args.bootstrap])
@@ -388,12 +530,15 @@ Psiboot = zeros([npos, nmeas, nmeas, args.bootstrap])
 E_dboot = zeros([nstructs, npos, args.bootstrap])
 E_ddTboot = zeros([nstructs, nstructs, npos, args.bootstrap])
 
-def make_struct_figs(structures, fprefix):
-    for i, s in enumerate(structures):
-        VARNA.cmd(mutants[0], remove_non_cannonical(s, mutants[0]), args.outprefix + fprefix + 'structure%s.svg' % i, options={'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'})
-
+medoid_dict, assignments = cluster_structures(fa.struct_types, structures=structures)
+maxmedoids = [medoid_dict[k] for k in assignments]
 if not args.worker:
-    make_struct_figs(structures, '')
+    if len(structures) > MAX_STRUCTURES_PLOT:
+        make_struct_figs([structures[i] for i in maxmedoids], '', indices=maxmedoids)
+    else:
+        make_struct_figs(structures, '')
+
+
 for b_iter in xrange(args.bootstrap + 1):
 
     if b_iter > 0:
@@ -408,7 +553,10 @@ for b_iter in xrange(args.bootstrap + 1):
         I = arange(data_cutoff.shape[1])
     seqpos_iter = [seqpos_cutoff[i] for i in I]
 
-    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, n_jobs=args.njobs, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+
+        
+        
+    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
 
     structures = post_structures
 
@@ -496,19 +644,7 @@ for b_iter in xrange(args.bootstrap + 1):
         report.write('RMSEA: %s\n' % rmsea)
         report.write('AIC: %s\n' % aic)
         report.close()
-
         r = range(data_cutoff.shape[1])
-        for i, s in enumerate(selected_structures):
-            f = figure(2)
-            f.set_size_inches(15, 5)
-            clf()
-            title('Structure %s: %s' % (i, s))
-            if args.hardem:
-                expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:], seq_indices=I)
-            else:
-                expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
-            xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
-            savefig('%s/exp_react_struct_%s.png' % (prefix, i), dpi=args.dpi)
 
         for i in arange(0, data_cutoff.shape[0], args.splitplots):
             if i == 0 and args.splitplots == data_cutoff.shape[0]:
@@ -532,26 +668,31 @@ for b_iter in xrange(args.bootstrap + 1):
                     missed_indices=missed_indices, weights=W_fa[i:i+args.splitplots,:])
             savefig('%s/data_pred_annotated%s.png' % (prefix,isuffix), dpi=args.dpi)
 
-            """
+            # Structure cluster landscape plot for wild type
+            PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:])
+            savefig('%s/pca_landscape_plot_WT%s.png' % (prefix,isuffix), dpi=args.dpi)
+
             figure(1)
             clf()
-            imshow(C[i:i+args.splitplots,:], cmap=get_cmap('jet'), interpolation='nearest')
-            savefig('%s/contacts%s.png' % (prefix,isuffix), dpi=args.dpi)
-            """
-            for s in xrange(len(structures)):
-                figure(1)
-                clf()
-                imshow(E_c_fa[i:i+args.splitplots,s,:] - fa.calculate_data_pred(no_contacts=True)[0], aspect='auto', interpolation='nearest')
-                xticks(range(len(seqpos_iter)), ['%s%s' % (pos, sequence[pos - offset - 1]) for pos in seqpos_iter], fontsize='xx-small', rotation=90)
-                ml = [mut_labels[k] for k in xrange(i, i+args.splitplots)]
-                yticks(range(len(ml)), ml, fontsize='xx-small')
-                savefig('%s/E_c_%s_structure_%s.png' % (prefix,isuffix,s), dpi=args.dpi)
+            unstruct_indices = []
+            for selstruct, structidx in enumerate(selected_structures):
+                for seqidx, struct in enumerate(structures[structidx]):
+                    if struct == '.':
+                        unstruct_indices.append((selstruct,seqidx))
+            plot_mutxpos_image(E_d_fa[:, I], sequence, seqpos_iter, offset, [str(k) for k in xrange(E_d_fa.shape[0])], missed_indices=unstruct_indices, aspect=None)
+            ylabel('Structure')
+            xlabel('Sequence position')
+            savefig('%s/E_d%s.png' % (prefix, isuffix), dpi=args.dpi+100)
 
-
+            # Plot weights
             figure(3)
             clf()
             ax = subplot(111)
-            weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)])
+            if len(structures) > MAX_STRUCTURES_PLOT:
+                weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], assignments=assignments, medoids=maxmedoids)
+            else:
+                weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)])
+
             savefig('%s/weights_by_mutant%s.png' % (prefix,isuffix), dpi=args.dpi)
 
             # Plot Log-likelihood trace
@@ -565,6 +706,27 @@ for b_iter in xrange(args.bootstrap + 1):
 
 
             if args.detailedplots:
+                for s in xrange(len(structures)):
+                    figure(1)
+                    clf()
+                    imshow(E_c_fa[i:i+args.splitplots,s,:] - fa.calculate_data_pred(no_contacts=True)[0], aspect='auto', interpolation='nearest')
+                    xticks(range(len(seqpos_iter)), ['%s%s' % (pos, sequence[pos - offset - 1]) for pos in seqpos_iter], fontsize='xx-small', rotation=90)
+                    ml = [mut_labels[k] for k in xrange(i, i+args.splitplots)]
+                    yticks(range(len(ml)), ml, fontsize='xx-small')
+                    savefig('%s/E_c_%s_structure_%s.png' % (prefix,isuffix,s), dpi=args.dpi)
+
+                for i, s in enumerate(selected_structures):
+                    f = figure(2)
+                    f.set_size_inches(15, 5)
+                    clf()
+                    title('Structure %s: %s' % (i, s))
+                    if args.hardem:
+                        expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:], seq_indices=I)
+                    else:
+                        expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
+                    xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
+                    savefig('%s/exp_react_struct_%s.png' % (prefix, i), dpi=args.dpi)
+
                 # Plot weights by mutant by structure, compared to initial weight values
                 for j in xrange(nstructs):
                     figure(3)
@@ -635,7 +797,11 @@ if args.bootstrap > 0:
         figure(3)
         clf()
         ax = subplot(111)
-        weights_by_mutant_plot(Wcompile_mean, Wcompile_std, mut_labels)
+        if len(structures) > MAX_STRUCTURES_PLOT:
+            weights_by_mutant_plot(Wcompile_mean, Wcompile_std, mut_labels, assignments=assignments, medoids=maxmedoids)
+        else:
+            weights_by_mutant_plot(Wcompile_mean, Wcompile_std, mut_labels)
+
         savefig('%s/bootstrap_weights_by_mutant.png' % (args.outprefix), dpi=args.dpi)
 
         if args.detailedplots:
@@ -657,22 +823,12 @@ if args.bootstrap > 0:
 
 for s in structures:
     print s
-"""
-print 'Performing post 1D secondary structure modeling'
-if args.postmodel:
-    if args.worker:
-        print 'Post 1D structure modeling has no effect in worker mode!'
-    else:
-        new_structures = []
-        for i in xrange(E_d_fa.shape[0]):
-            #md = mapping.MappingData(data=E_d_fa[i,:], enforce_positives=True)
-            E_d_fa[i,:][E_d_fa[i,:] < 0] = -999
-            md = mapping.MappingData(data=E_d_fa[i,:])
-            new_structures.append(ss.fold(sequence, mapping_data=md, algorithm=args.priorweights)[0].dbn)
-        open('%s/postmodel_structures.txt' % args.outprefix, 'w').write('\n'.join(new_structures))
-        make_struct_figs(new_structures, 'postmodel_')
-"""
+
 if not args.worker and args.postmodel:
+    if len(structures) > MAX_STRUCTURES_PLOT:
+        make_struct_figs([structures[i] for i in maxmedoids], 'postmodel_', indices=maxmedoids)
+    else:
+        make_struct_figs(structures, 'postmodel_')
     make_struct_figs(structures, 'postmodel_')
 print 'Done!'
 print '\a'

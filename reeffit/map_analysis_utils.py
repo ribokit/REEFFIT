@@ -30,11 +30,11 @@ def _mutinf(typ1, typ2):
             res += 1
     return res
 
-def _bpdist(sbp1, sbp2):
+def bpdist(sbp1, sbp2):
     res = 0
     for bp1_1, bp1_2 in sbp1:
         for bp2_1, bp2_2 in sbp2:
-            if (bp1_1 == bp2_1 and bp1_2 == bp2_2) or (bp1_2 == bp2_1 and bp1_1 == bp2_2):
+            if not ((bp1_1 == bp2_1 and bp1_2 == bp2_2) or (bp1_2 == bp2_1 and bp1_1 == bp2_2)):
                 res += 1
     return res
     
@@ -46,13 +46,8 @@ def get_struct_types(structures, cutoff=-1):
         struct_types.append(['u' if s[i] == '.' else 'p' for s in structures])
     return struct_types
 
-
-def cluster_structures(struct_types, structures=[], distance='mutinf', expected_medoids=-1):
+def get_structure_distance_matrix(structures, struct_types, distance='mutinf'):
     nstructs = len(struct_types[0])
-    print 'Clustering structures'
-    # Ok, find a subset of structures that are mostly "orthogonal", clustering
-    # with mutual information (mutinf option) or base pair distance (basepair option)
-    # Looks ugly, but seems that numpy's symmetric matrix support is limited (i.e. none)
     if distance == 'basepair':
         structures_bp = [rdatkit.secondary_structure.SecondaryStructure(dbn=struct).base_pairs() for struct in structures]
     D = zeros([nstructs, nstructs])
@@ -63,10 +58,19 @@ def cluster_structures(struct_types, structures=[], distance='mutinf', expected_
             if distance == 'mutinf':
                 D[i,j] = _mutinf(st1, [s[j] for s in struct_types])  
             elif distance == 'basepair':
-                D[i,j] = _bpdist(structures_bp[i], structures_bp[j])
+                D[i,j] = bpdist(structures_bp[i], structures_bp[j])
             else:
                 raise ValueError('Distance %s not recognized: options are "mutinf" and "basepair"' % distance)
             D[j,i] = D[i,j]
+    return D
+
+def cluster_structures(struct_types, structures=[], distance='mutinf', expected_medoids=-1):
+    nstructs = len(struct_types[0])
+    print 'Clustering structures'
+    # Ok, find a subset of structures that are mostly "orthogonal", clustering
+    # with mutual information (mutinf option) or base pair distance (basepair option)
+    # Looks ugly, but seems that numpy's symmetric matrix support is limited (i.e. none)
+    D = get_structure_distance_matrix(structures, struct_types, distance=distance)
     # Proxy for ensemble centroid (EC)
     minsumdist = inf
     for i in xrange(nstructs):
@@ -359,3 +363,116 @@ def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=No
             contact_sites[s] = contact_sites[s][:,restrict_range[0]:restrict_range[1]]
     return contact_sites
 
+
+def get_minimal_overlapping_motif_decomposition(structures):
+    if type(structures[0]) == str:
+        struct_objs = [rdatkit.secondary_structure.SecondaryStructure(dbn=s) for s in structures]
+    else:
+        struct_objs = structures
+
+    def get_motif_id(k, ntlist):
+        return '%s_%s' % (k, '-'.join([str(x) for x in ntlist]))
+
+    pos_motif_map = {}
+
+    elems = [s.explode() for s in struct_objs]
+    cover_matrix = ones([len(struct_objs), len(struct_objs[0])])
+    motif_ids = []
+    for i, s1 in enumerate(struct_objs):
+        cover_vec = ones([len(s1)])
+        for k, v in elems[i].iteritems():
+            for ntlist in v:
+                for pos in ntlist:
+                    cover_vec[pos] = 0
+        # Single stranded regions that were not covered by a motif
+        # are collapsed into a "motif" we call sstrand
+        ssprev = -1
+        currssmotif = []
+        elems[i]['sstrand'] = []
+        for j in xrange(len(s1)):
+            if cover_vec[j] > 0:
+                if ssprev == j-1:
+                    currssmotif.append(j)
+                    ssprev = j
+                else:
+                    elems[i]['sstrand'].append(currssmotif)
+                    currssmotif = []
+
+        for k, v in elems[i].iteritems():
+            for ntlist in v:
+                for pos in ntlist:
+                    try:
+                        m_idx = motif_ids.index(get_motif_id(k, ntlist))
+                        if (pos,m_idx) not in pos_motif_map:
+                            pos_motif_map[(pos,m_idx)] = [i]
+                        else:
+                            if i not in pos_motif_map[(pos,m_idx)]:
+                                pos_motif_map[(pos,m_idx)].append(i)
+                    except ValueError:
+                        motif_ids.append(get_motif_id(k, ntlist))
+                        pos_motif_map[(pos,len(motif_ids)-1)] = [i]
+
+    """
+    for k, d in motif_pos_map.iteritems():
+        for i, s1 in enumerate(struct_objs):
+            for pos in xrange(len(s1)):
+                if pos in d and i in d[pos]:
+                    pos_motif_map[pos][k].append(i)
+
+    return motif_pos_map, pos_motif_map, motif_ids
+    """
+    for i in xrange(cover_matrix.shape[0]):
+        for j in xrange(cover_matrix.shape[1]):
+            for pos, mid in pos_motif_map.keys():
+                if pos == j and i in pos_motif_map[(pos, mid)]:
+                    cover_matrix[i,j] = 0
+                    break
+
+    return pos_motif_map, motif_ids
+        
+
+    """
+    # This is an unfinished implementation of the greedy algorithm for
+    # "set covering" applied to minimal motif decomposition
+    base_types = []
+    bp_dicts = [s.base_pair_dict() for s in struct_objs]
+    for i, s in enumerate(struct_objs):
+        type_dict = s.explode()
+        base_types.append(['']*len(s.dbn))
+        for typ, elems in type_dict.iteritems():
+            for ntlist in elems:
+                for j in ntlist:
+                    # Do not discriminate between n-way junctions
+                    if 'junction' in typ:
+                        base_types[i][j] = 'junction'
+                    else:
+                        base_types[i][j] = typ
+
+    for i, s in enumerate(struct_objs):
+        motif = []
+        share_seqs = []
+        idx = 0
+        while idx < len(s)
+            for j in xrange(idx, len(s.dbn)):
+                if base_types[i][j] == 'helix':
+                    for k, s2 in enumerate(struct_objs):
+                        if base_dicts[i][j] == base_dicts[k][j] and k not in share_seqs:
+                            if k, not in already_added:
+                                share_seqs.append(k)
+                                already_added.append(k)
+                        if base_dicts[i][j] != base_dicts[k][j] and k in share_seqs:
+                            stop_flag = True
+                else:
+                    for k, s2 in enumerate(struct_objs):
+                        if base_types[i][j] == base_types[k][j] and k not in share_seqs:
+                            if k not in already_added:
+                                share_seqs.append(k)
+                        if base_types[i][j] != base_types[k][j] and k in share_seqs:
+                            stop_flag = True
+                            break
+                if stop_flag:
+                    break
+                else:
+                    motif.append(j)
+            idx = j
+    """

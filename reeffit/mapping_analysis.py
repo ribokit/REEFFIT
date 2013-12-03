@@ -208,15 +208,17 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
     def perform_motif_decomposition(self):
         print 'Starting motif decomposition'
-        self.pos_motif_map, self.motif_ids = utils.get_minimal_overlapping_motif_decomposition(self._origstructures)
-        nmotpos = []
+        self.pos_motif_map, self.motif_ids, self.motif_dist = utils.get_minimal_overlapping_motif_decomposition(self._origstructures, bytype=True)
+        self.nmotpos = []
+        self.posmap = defaultdict(list)
         for i in xrange(self.data.shape[1]):
             nmotifs = 0
             for midx in xrange(len(self.pos_motif_map)):
                 if (i, midx) in self.pos_motif_map:
                     nmotifs += 1
-            nmotpos.append(nmotifs)
-        print 'Number of motifs per position: %s' % nmotpos
+                    self.posmap[i].append(self.motif_ids[midx])
+            self.nmotpos.append(nmotifs)
+        print 'Number of motifs per position: %s' % self.nmotpos
         self.use_motif_decomposition = True
 
     # To perform a standard factor analysis, with normal priors
@@ -514,7 +516,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         selected_structs = subset
             return selected_structs
 
-    def hard_EM_vars(self, idx, W, Psi_inv, data, struct_types, contact_sites, bp_dist):
+    def hard_EM_vars(self, idx, W, Psi_inv, data, struct_types, contact_sites, bp_dist, seq_indices):
         # This basically solves into a system of linear equations
         # Each entry is either a hidden reactivity or a hidden contact
         # to be solved
@@ -523,8 +525,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         # No Lapacian priors here, we use exponential (for hidden reactivities) and Gaussian (i.e. 2-norm) for contacts for easier calculations
         contact_prior_factor = 1/1.5
         prior_factors = {}
-        prior_factors['u'] = 1.5
-        prior_factors['p'] = 5.
+        prior_factors['u'] = 0.5
+        prior_factors['p'] = 10.
         nmeas = W.shape[0]
         nstructs = len(struct_types[0])
         contact_idx_dict = {}
@@ -532,13 +534,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             nmotifs = 0
             motif_idx_dict = {}
             for midx in xrange(len(self.pos_motif_map)):
-                if (idx, midx) in self.pos_motif_map:
+                if (seq_indices[idx], midx) in self.pos_motif_map:
                     motif_idx_dict[nmotifs] = midx
                     nmotifs += 1
-
             # Some helper functions to make the code more compact
             def motifidx(midx):
-                return self.pos_motif_map[(idx, motif_idx_dict[midx])]
+                return self.pos_motif_map[(seq_indices[idx], motif_idx_dict[midx])]
+
             def check_contact_site(midx, j):
                 for m in motifidx(midx):
                     if contact_sites[m][j, idx]:
@@ -579,6 +581,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         if self.use_motif_decomposition:
                             for j in xrange(nmeas):
                                 A[p,s] += W[j,motifidx(p)].sum()*W[j,motifidx(s)].sum()
+                            if p == s:
+                                for s1 in xrange(nstruct_elems):
+                                    if s != s1:
+                                        A[p,s] += 4*self.lam_reacts*1/self.motif_dist[motif_idx_dict[s1],motif_idx_dict[s]]
+                            else:
+                                A[p,s] -= 4*self.lam_reacts*1/self.motif_dist[motif_idx_dict[p],motif_idx_dict[s]]
+
                         else:
                             A[p,s] = dot(W[:,s], W[:,p])
                             if p == s:
@@ -672,7 +681,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             dims = {'l':n, 'q':[], 's':[]}
             try:
                 #x = array(solvers.coneqp(Acvx.T*Acvx, -Acvx.T*bcvx, G, h, dims, None, None, {'x':cvxmat(x0)})['x'])
-                x = optimize.fmin_slsqp(f, x0, fprime=fprime, bounds=bounds, iter=2000)
+                #x = optimize.fmin_slsqp(f, x0, fprime=fprime, bounds=bounds, iter=2000)
+                x = optimize.fmin_l_bfgs_b(f, x0, fprime=fprime, bounds=bounds)[0]
                 #x = linalg.solve(A, b)
             except ValueError:
                 solved=False
@@ -745,7 +755,14 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     if contact_sites[s][j,idx]:
                         E_c__obs[j,s] += x[contact_idx_dict[(j,s)]]
 
-        sigma_d__obs = mat(sqrt(E_ddT__obs.diagonal()))
+        sigma_d__obs = mat(zeros([nstructs]))
+        if self.use_motif_decomposition:
+            for s in xrange(nmotifs):
+                sigma_d__obs[0,motifidx(s)] = sqrt(1/(Psi_inv[0,0]*(W[:,motifidx(s)]**2).sum()))
+        else:
+            for s in xrange(nstructs):
+                sigma_d__obs[0,s] = sqrt(1/(Psi_inv[0,0]*(W[:,s]**2).sum()))
+
         return mat(E_d__obs), E_ddT__obs, sigma_d__obs, E_c__obs
 
 
@@ -882,11 +899,16 @@ class FAMappingAnalysis(MappingAnalysisMethod):
     def calculate_fit_statistics(self):
         data_pred, sigma_pred = self.calculate_data_pred()
         chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
-        df = self.data.size - self.W.size - self.E_d.size - self.E_c[logical_not(isnan(self.E_c))].size - self.data.shape[1] - 1
+        df = self.data.size - self.W.size - self.E_c[logical_not(isnan(self.E_c))].size - self.data.shape[1] - 1
+        if self.use_motif_decomposition:
+            df += -sum(self.nmotpos) 
+        else:
+            df += -self.E_d.size   
         k = -df - self.data.size + 1
         rmsea = sqrt(max((chi_sq/df - 1)/(self.data.shape[1] - 1), 0.0))
-        return chi_sq/df, rmsea, asscalar(chi_sq + 2*k - self.data.shape[0]*self.logpriors)
+        aic = asscalar(chi_sq + 2*k - self.data.shape[0]*self.logpriors)
 
+        return chi_sq/df, rmsea, aic
 
     def correct_scale(self, stype='linear'):
         data_pred, sigma_pred = self.calculate_data_pred()
@@ -966,7 +988,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             kds = []
         return structures, energies, struct_types, contact_sites, concentrations, kds
 
-    def _assign_W(self, E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals):
+    def _assign_W(self, data, E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals):
         # Constrain the weights to be positive
         # If we were specified energies, we need to apply the lagrange multipliers
         # to constarint weights to be convex combinations and then
@@ -998,8 +1020,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 E_ddT_Psi_inv = zeros(E_ddT[:,:,0].shape)
                 E_d_c_j = self._E_d_c_j(E_d, E_c, j, contact_sites)
                 for i in xrange(E_d_c_j.shape[1]):
-                    #E_d_proj += self.data[j,i]*E_d[:,i]
-                    E_d_proj += -Psi_inv[i,j,j]*self.data[j,i]*E_d_c_j[:,i]
+                    #E_d_proj += data[j,i]*E_d[:,i]
+                    E_d_proj += -Psi_inv[i,j,j]*data[j,i]*E_d_c_j[:,i]
                     E_ddT_Psi_inv += Psi_inv[i,j,j]*E_ddT[:,:,i]
 
                 if self.lam_weights != 0:
@@ -1013,8 +1035,15 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 A = cvxmat(1.0, (1, nstructs))
                 b = cvxmat(1.0)
                 p = cvxmat(E_d_proj)
-                #sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[j,:])})['x'])
-                sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
+                def quadfun(x):
+                    return asscalar(0.5*dot(x.T, dot(E_ddT_Psi_inv, x)) + dot(E_d_proj.T,x))
+                def quadfunprime(x):
+                    return 0.5*asarray(dot(E_ddT_Psi_inv, x) + asarray(E_d_proj).ravel())
+                bounds = [(1e-10, 1)]*nstructs
+                #sol = optimize.fmin_l_bfgs_b(quadfun, W_initvals[j,:], fprime=quadfunprime, bounds=bounds)[0]
+                sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[j,:])})['x'])
+                #sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
+                
                 sol[sol <= 0] = 1e-10
                 return sol.T
 
@@ -1270,14 +1299,14 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             if hard_em:
                 if self.njobs != None:
                     def par_fun(i):
-                        return self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist)
+                        return self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist, seq_indices)
                     sys.modules[__name__].par_fun = par_fun
                     restuples = joblib.Parallel(n_jobs=self.njobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
 
                 else:
                     restuples = []
                     for i in xrange(npos):
-                        restuples.append(self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist))
+                        restuples.append(self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist, seq_indices))
 
             else:
                 if self.njobs != None:
@@ -1305,7 +1334,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     B = self._dot_E_d_i(data[:,i], E_d[:,i], E_c[:,:,i], i, contact_sites, T=True)
                     C = -dot(dot(data[:,i].T, Psi_inv[i,:,:]), data[:,i])
                     C += 2.*self._dot_E_d_i(dot(dot(data[:,i].T, Psi_inv[i,:,:]), W), E_d[:,i], E_c[:,:,i], i, contact_sites)
-                    C += -(dot(dot(dot(W.T, Psi_inv[i,:,:]), W), E_ddT_i)).diagonal().sum()
+                    C += -(dot(dot(dot(W.T, Psi_inv[i,:,:]), W), E_ddT[:,:,i])).diagonal().sum()
                     l = 0.5 * (C - npos*log(self._get_determinant(Psi[i,:,:])))
                     return B, l
                 sys.modules[__name__].par_fun = par_fun
@@ -1322,7 +1351,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     C = -dot(dot(data[:,i].T, Psi_inv[i,:,:]), data[:,i])
                     C += 2.*self._dot_E_d_i(dot(dot(data[:,i].T, Psi_inv[i,:,:]), W), E_d[:,i], E_c[:,:,i], i, contact_sites)
                     #C += -2.*dot(dot(dot(data[:,i].T, Psi_inv), W), E_d[:,i])
-                    C += -(dot(dot(dot(W.T, Psi_inv[i,:,:]), W), E_ddT_i)).diagonal().sum()
+                    C += -(dot(dot(dot(W.T, Psi_inv[i,:,:]), W), E_ddT[:,:,i])).diagonal().sum()
                     loglike += 0.5 * (C - npos*log(self._get_determinant(Psi[i,:,:])))
             # M-step
             """
@@ -1341,7 +1370,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             """
 
             # Given our expected reactivities, now assign the weights
-            W_new = self._assign_W(E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals)
+            W_new = self._assign_W(data, E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals)
 
             #W_new = W + adaptive_factor*(W_new - W)
             W_new[W_new < 0] = 1e-10
@@ -1350,8 +1379,17 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             W = W_new
             # Now get covariance matrix
             data_pred = zeros([W.shape[0], E_d.shape[1]])
-            for i in xrange(data_pred.shape[1]):
-                data_pred[:,i] = self._dot_E_d_i(W, E_d[:,i], E_c[:,:,i], i, contact_sites).T
+
+            if self.njobs != None:
+                def par_fun(i):
+                    return self._dot_E_d_i(W, E_d[:,i], E_c[:,:,i], i, contact_sites).T
+                sys.modules[__name__].par_fun = par_fun
+                restuples = joblib.Parallel(n_jobs=self.njobs)(joblib.delayed(par_fun)(i) for i in xrange(npos))
+                for i, D in enumerate(restuples):
+                    data_pred[:,i] = D
+            else:
+                for i in xrange(data_pred.shape[1]):
+                    data_pred[:,i] = self._dot_E_d_i(W, E_d[:,i], E_c[:,:,i], i, contact_sites).T
             for i in xrange(npos):
                 P = sum(array(data[:,i].ravel() - data_pred[:,i].ravel())**2)
                 Pd = array([P/nmeas]*nmeas)
@@ -1398,16 +1436,19 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             
             # Add prior likelihoods
             logpriors = 0
+            MIN_LOGLIKE = -1e100
+            MIN_LOGLIKE = 0
+            """
             for sidx in xrange(len(select_struct_indices)):
                 for sidx2 in xrange(len(select_struct_indices)):
                     try:
                         logpriors += -self.lam_reacts*1/self.bp_dist[sidx,sidx2]*(asarray(E_d[sidx,:] - E_d[sidx2,:])**2).sum()
                     except FloatingPointError:
-                        logpriors += -1e100
+                        logpriors += MIN_LOGLIKE
                 try:
                     logpriors += -(self.lam_weights*(W*(1./W_initvals))).sum()
                 except FloatingPointError:
-                    logpriors += -1e100
+                    logpriors += MIN_LOGLIKE
                 for iidx in xrange(len(seq_indices)):
                     try:
                         if struct_types[iidx][sidx] == 'p':
@@ -1415,8 +1456,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         else:
                             logpriors += log(self.unpaired_pdf(E_d[sidx,iidx]))
                     except FloatingPointError:
-                        logpriors += -1e100
-
+                        logpriors += MIN_LOGLIKE
+            """
             loglike += logpriors
             # Check if we are done
             print 'Finished iteration %s with log-likelihood %s' % (t, loglike)
@@ -1464,7 +1505,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
         print 'W_std calculation started'
         # Calculate the standard deviation of the MLE
-        self.W_std = self._calculate_MLE_std(W, Psi_inv, E_ddT)
+        self.W_std = self._calculate_MLE_std(W_opt, Psi_inv, E_ddT_opt)
         print 'W_std calculation finished'
 
         # Interpolate for the rest of the data if we clustered
@@ -1486,7 +1527,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
             Psi_inv = linalg.inv(Psi)
             self.perturbs = perturbs
-            self.W = asarray(self._assign_W(E_d, E_ddT, E_ddT_inv, alldata_E_d, Psi, contact_sites, allenergies, allconcentrations, allkds, G_constraint, allmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals))
+            self.W = asarray(self._assign_W(data, E_d, E_ddT, E_ddT_inv, alldata_E_d, Psi, contact_sites, allenergies, allconcentrations, allkds, G_constraint, allmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals))
             self.W_std = asarray(self._calculate_MLE_std(self.W, Psi_inv, E_ddT))
             self.Psi = asarray(Psi)
             self.perturbs = asarray(perturbs)

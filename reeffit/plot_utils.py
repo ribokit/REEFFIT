@@ -49,10 +49,9 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
         for c, si in assignments.iteritems():
             for s in si:
                 _W[:,i] += W[:,s]
-                _W_err[:,i] += W_err[:,s]
-            _W_err[:,i] /= len(si)
+                _W_err[:,i] += W_err[:,s]**2
+            _W_err[:,i] = sqrt(_W_err[:,i])
             i += 1
-        _W_err[:] = 0.01
 
     for j in xrange(nstructs):
         ax.errorbar(arange(W.shape[0])+1, _W[:,j], yerr=_W_err[:,j], linewidth=3, label='structure %s ' % (struct_indices[j] + idx_offset), color=structure_colors[j + idx_offset])

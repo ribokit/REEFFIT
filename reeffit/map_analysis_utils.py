@@ -364,14 +364,20 @@ def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=No
     return contact_sites
 
 
-def get_minimal_overlapping_motif_decomposition(structures):
+def get_minimal_overlapping_motif_decomposition(structures, bytype=False):
     if type(structures[0]) == str:
         struct_objs = [rdatkit.secondary_structure.SecondaryStructure(dbn=s) for s in structures]
     else:
         struct_objs = structures
 
-    def get_motif_id(k, ntlist):
+    def get_motif_id(k, ntlist, pos):
+        if bytype:
+            return '%s_%s' % (k, pos)
         return '%s_%s' % (k, '-'.join([str(x) for x in ntlist]))
+
+    def get_type_and_ntlist(id):
+        typ, ntliststr = id.split('_')
+        return typ, [int(x) for x in ntliststr.split('-')]
 
     pos_motif_map = {}
 
@@ -402,15 +408,35 @@ def get_minimal_overlapping_motif_decomposition(structures):
             for ntlist in v:
                 for pos in ntlist:
                     try:
-                        m_idx = motif_ids.index(get_motif_id(k, ntlist))
+                        m_idx = motif_ids.index(get_motif_id(k, ntlist, pos))
                         if (pos,m_idx) not in pos_motif_map:
                             pos_motif_map[(pos,m_idx)] = [i]
                         else:
                             if i not in pos_motif_map[(pos,m_idx)]:
                                 pos_motif_map[(pos,m_idx)].append(i)
                     except ValueError:
-                        motif_ids.append(get_motif_id(k, ntlist))
+                        motif_ids.append(get_motif_id(k, ntlist, pos))
                         pos_motif_map[(pos,len(motif_ids)-1)] = [i]
+
+    motif_dist = zeros([len(motif_ids), len(motif_ids)])
+    if bytype:
+        MAX_DIST = 1.
+        MIN_DIST = 1e-5
+        for i, mid1 in enumerate(motif_ids):
+            for j, mid2 in enumerate(motif_ids):
+                typ1, ntlist1 = get_type_and_ntlist(mid1)
+                typ2, ntlist2 = get_type_and_ntlist(mid2)
+                if typ1 == typ2:
+                    nposoverlap = 0.
+                    for nt1 in ntlist1:
+                        if nt1 in ntlist2:
+                            nposoverlap += 1.
+                    motif_dist[i,j] = max(MIN_DIST, nposoverlap/max(len(ntlist1), len(ntlist2)))
+                else:
+                    motif_dist[i,j] = MAX_DIST
+                motif_dist[j,i] = motif_dist[i,j]
+
+            
 
     """
     for k, d in motif_pos_map.iteritems():
@@ -428,7 +454,7 @@ def get_minimal_overlapping_motif_decomposition(structures):
                     cover_matrix[i,j] = 0
                     break
 
-    return pos_motif_map, motif_ids
+    return pos_motif_map, motif_ids, motif_dist
         
 
     """

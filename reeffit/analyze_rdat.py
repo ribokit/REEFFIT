@@ -117,12 +117,16 @@ last_seqpos = 0
 def valid(seq):
     return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
 
-def make_struct_figs(structures, fprefix, indices=None):
+def make_struct_figs(structures, fprefix, indices=None, base_annotations=[], helix_function=lambda x,y:x):
+    options = {'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'}
     if indices == None:
         indices = range(len(structures))
     for i, s in enumerate(structures):
         print s
-        #VARNA.cmd(mutants[0], remove_non_cannonical(s, mutants[0]), args.outprefix + fprefix + 'structure%s.svg' % indices[i], options={'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'})
+        varna = VARNA(sequences=[mutants[wt_idx]], structures=[ss.SecondaryStructure(dbn=remove_non_cannonical(s, mutants[0]))])
+        CMD = varna.rende(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options, base_annotations=base_annotations[i])
+        print CMD
+        os.system(CMD)
 
 def carry_on_option_string():
     options = ''
@@ -926,6 +930,22 @@ if args.compilebootstrap:
 
     E_dcompile_std = fa.sigma_d
     E_dcompile_mean = fa.E_d
+
+    if len(structures) > MAX_STRUCTURES_PLOT:
+        base_annotations = []
+        for m in maxmedoids:
+            for structs in assignments:
+                if s in structs:
+                    struct_objs = [ss.SecondaryStructure(dbn=structures[s]) for s in structs]
+                    bp_fractions = ss.base_pair_fractions_in_structures(ss.SecondaryStructure(dbn=structures[m]), struct_objs, factors=Wcompile_mean[wt_idx, structs])
+                    annotations = []
+                    for bp, frac in bp_fractions.iteritems():
+                        annotations.append((bp[0], frac))
+                        annotations.append((bp[1], frac))
+                    base_annotations.append(annotations)
+        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_function=lambda x,y: '%3.2f' % max(float(x)/100.,float(y)/100.)*100.)
+
+
 
     bootfactor = sqrt(nboot)
     bootfactor = 1

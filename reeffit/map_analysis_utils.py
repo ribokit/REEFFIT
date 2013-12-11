@@ -385,24 +385,29 @@ def get_minimal_overlapping_motif_decomposition(structures, bytype=False):
     cover_matrix = ones([len(struct_objs), len(struct_objs[0])])
     motif_ids = []
     for i, s1 in enumerate(struct_objs):
-        cover_vec = ones([len(s1)])
+        cover_vec = [False]*len(s1)
         for k, v in elems[i].iteritems():
             for ntlist in v:
                 for pos in ntlist:
-                    cover_vec[pos] = 0
+                    cover_vec[pos] = True
         # Single stranded regions that were not covered by a motif
         # are collapsed into a "motif" we call sstrand
         ssprev = -1
         currssmotif = []
         elems[i]['sstrand'] = []
+        foundssmotif = False
         for j in xrange(len(s1)):
-            if cover_vec[j] > 0:
+            if not cover_vec[j]:
                 if ssprev == j-1:
                     currssmotif.append(j)
-                    ssprev = j
                 else:
-                    elems[i]['sstrand'].append(currssmotif)
-                    currssmotif = []
+                    if ssprev >= 0:
+                        elems[i]['sstrand'].append(currssmotif)
+                    currssmotif = [j]
+                    foundssmotif = True
+                ssprev = j
+        if foundssmotif:
+            elems[i]['sstrand'].append(currssmotif)
 
         for k, v in elems[i].iteritems():
             for ntlist in v:

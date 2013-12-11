@@ -33,33 +33,50 @@ def expected_reactivity_plot(react, struct, yerr=None, ymin=0, ymax=5, seq_indic
     ylim(0,5)
     xlim(1,len(react))
 
-def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLORS, W_ref=None, idx_offset=0, assignments=None, medoids=None):
+def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLORS, W_ref=None, idx=-1, assignments=None, medoids=None):
     ax = subplot(111)
     if assignments == None:
         _W = W
         _W_err = W_err
+        _W_ref = W_ref
         nstructs = W.shape[1]
         struct_indices = range(nstructs)
     else:
         _W = zeros([W.shape[0], len(medoids)])
         _W_err = zeros([W.shape[0], len(medoids)])
+        if W_ref != None:
+            _W_ref = zeros([W.shape[0], len(medoids)])
+        else:
+            _W_ref = None
         nstructs = len(medoids)
         struct_indices = medoids
         i = 0
+        setidx = False
         for c, si in assignments.iteritems():
+            if idx in si:
+                if not setidx:
+                    idx = i
+                    setidx = True
+                
             for s in si:
                 _W[:,i] += W[:,s]
+                if _W_ref != None:
+                    _W_ref[:,i] += W_ref[:,s]
                 _W_err[:,i] += W_err[:,s]**2
             _W_err[:,i] = sqrt(_W_err[:,i])
             i += 1
+    if idx >= 0:
+        weight_range = [idx]
+    else:
+        weight_range = xrange(nstructs)
 
-    for j in xrange(nstructs):
-        ax.errorbar(arange(W.shape[0])+1, _W[:,j], yerr=_W_err[:,j], linewidth=3, label='structure %s ' % (struct_indices[j] + idx_offset), color=structure_colors[j + idx_offset])
-        if W_ref != None:
-            ax.errorbar(arange(W_ref.shape[0])+1, W_ref[:,j], linestyle='--', linewidth=3, label='reference %s ' % (struct_indices[j] + idx_offset), color=structure_colors[j + idx_offset])
+    for j in weight_range:
+        ax.errorbar(arange(W.shape[0])+1, _W[:,j], yerr=_W_err[:,j], linewidth=3, label='structure %s ' % (struct_indices[j]), color=structure_colors[j])
+        if _W_ref != None:
+            ax.errorbar(arange(_W_ref.shape[0])+1, _W_ref[:,j], linestyle='--', linewidth=3, label='reference %s ' % (struct_indices[j]), color=structure_colors[j])
     ylim(0,1)
-    xlim(0, W.shape[0]+1)
-    xticks(arange(W.shape[0])+1, mut_labels, fontsize='xx-small', rotation=90)
+    xlim(0, _W.shape[0]+1)
+    xticks(arange(_W.shape[0])+1, mut_labels, fontsize='xx-small', rotation=90)
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))

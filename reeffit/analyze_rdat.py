@@ -173,18 +173,21 @@ def prepare_bootstrap_worker_file(idx, all_indices, idxoffset):
 
 def write_worker_master_script(workerfiles, wtype):
     mwf = open('%smaster_script_%s.sh' % (args.outprefix, wtype), 'w')
-    mwf.write(' & '.join(['sh %s' % w for w in workerfiles]) + ' & \n')
+    mwf.write('#!/bin/bash\n')
+    mwf.write('if [ "$1" = "execute" ]\nthen\n')
+    mwf.write('\t' + ' &\n\t'.join(['sh %s' % w for w in workerfiles]) + ' & \n')
     general_options = '%s %s/ --structfile %s' % (os.path.abspath(args.rdatfile.name), args.outprefix, os.path.abspath(args.structfile.name))
     general_options += carry_on_option_string()
+    mwf.write('elif [ "$1" = "compile" ]\nthen\n')
     if wtype == 'bootstrap':
         general_options += ' --lamweights=%s --lamreacts=%s ' % (args.lamweights, args.lamreacts)
         general_options += ' --compilebootstrap '
-        mwf.write('#To compile your results, run the command below\n')
-        mwf.write('#%s %s %s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options))
+        mwf.write('\t%s %s %s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options))
     if wtype == 'cv':
         general_options += ' --lamfile=%scross_validation_results.txt ' % args.outprefix
-        mwf.write('#To compile your results, run the command below\n')
-        mwf.write('#%s %s %s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options))
+        mwf.write('\t%s %s %s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options))
+    mwf.write('else\n\techo "Option $1 not recognized, must be either \'execute\' or \'compile\'"\n')
+    mwf.write('fi')
     mwf.write('\nwait\n')
     return mwf.name
 
@@ -243,7 +246,7 @@ for idx, d in enumerate(construct.data):
                     pos.append(i)
         else:
             pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
-            mutant = sequence[:pos] + label[-1] + sequence[pos+1:]
+            mutant = sequence[:pos[0]] + label[-1] + sequence[pos[0]+1:]
         mutpos.append(pos)
     if mutant in mutants and args.nomutrepeat:
         continue
@@ -780,10 +783,26 @@ else:
         ax = subplot(111)
         if len(structures) > MAX_STRUCTURES_PLOT:
             weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], assignments=assignments, medoids=maxmedoids)
+            savefig('%s/weights_by_mutant%s.png' % (prefix,isuffix), dpi=args.dpi)
+            # Plot weights by mutant by structure, compared to initial weight values
+            for j in maxmedoids:
+                figure(3)
+                clf()
+                weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], W_ref=W_0[i:i+args.splitplots,:], idx=j, assignments=assignments, medoids=maxmedoids)
+                savefig('%s/weights_by_mutant_structure%s_%s.png' % (prefix, isuffix, j), dpi=100)
+
+
         else:
             weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)])
+            savefig('%s/weights_by_mutant%s.png' % (prefix,isuffix), dpi=args.dpi)
+            # Plot weights by mutant by structure, compared to initial weight values
+            for j in xrange(nstructs):
+                figure(3)
+                clf()
+                weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], W_ref=W_0[i:i+args.splitplots,:], idx=j)
+                savefig('%s/weights_by_mutant_structure%s_%s.png' % (prefix, isuffix, j), dpi=100)
 
-        savefig('%s/weights_by_mutant%s.png' % (prefix,isuffix), dpi=args.dpi)
+
 
         # Plot Log-likelihood trace
         figure(3)
@@ -832,12 +851,6 @@ else:
                 xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
                 savefig('%s/exp_react_struct_%s.png' % (prefix, i), dpi=args.dpi)
 
-            # Plot weights by mutant by structure, compared to initial weight values
-            for j in xrange(nstructs):
-                figure(3)
-                clf()
-                weights_by_mutant_plot(W_fa[i:i+args.splitplots,[j]], W_fa_std[i:i+args.splitplots,[j]], [mut_labels[k] for k in xrange(i, i+args.splitplots)], W_ref=W_0[i:i+args.splitplots,[j]], idx_offset=j)
-                savefig('%s/weights_by_mutant_structure%s_%s.png' % (prefix, isuffix, j), dpi=100)
 
             # Plot prior histograms
             x = linspace(0,8,100)
@@ -915,6 +928,7 @@ if args.compilebootstrap:
     E_dcompile_mean = fa.E_d
 
     bootfactor = sqrt(nboot)
+    bootfactor = 1
 
 
     r = range(data_cutoff.shape[1])
@@ -932,18 +946,25 @@ if args.compilebootstrap:
     ax = subplot(111)
     if len(structures) > MAX_STRUCTURES_PLOT:
         weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, assignments=assignments, medoids=maxmedoids)
+        savefig('%s/bootstrap_weights_by_mutant.png' % (args.outprefix), dpi=args.dpi)
+        for j in maxmedoids:
+            figure(3)
+            clf()
+            weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_ref=W_0, idx=j, assignments=assignments, medoids=maxmedoids)
+            savefig('%s/bootstrap_weights_by_mutant_structure_%s.png' % (args.outprefix, j), dpi=100)
+
     else:
         weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels)
-
-    savefig('%s/bootstrap_weights_by_mutant.png' % (args.outprefix), dpi=args.dpi)
-
-    if args.detailedplots:
-        # Plot weights by mutant by structure, compared to initial weight values
-        for j in maxmedoids:
+        savefig('%s/bootstrap_weights_by_mutant.png' % (args.outprefix), dpi=args.dpi)
+        for j in selected_structures:
             figure(3)
             clf()
             weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_ref=W_0, idx_offset=j)
             savefig('%s/bootstrap_weights_by_mutant_structure_%s.png' % (args.outprefix, j), dpi=100)
+
+
+
+
     print 'Printing bootstrap report'
     report = open('%s/bootstrap_report.txt' % args.outprefix,'w')
     if wt_idx != -1:

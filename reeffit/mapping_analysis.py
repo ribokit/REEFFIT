@@ -689,7 +689,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             if self.use_motif_decomposition:
                 for s in xrange(nmotifs):
                     if x[s] <= 0.001:
-                        E_d__obs[motifidx(s)] = rand(len(motifidx(s)))*0.0001
+                        E_d__obs[motifidx(s)] = 0.001
                     else:
                         E_d__obs[motifidx(s)] = x[s]
                         E_d__obs[motifidx(s)] += rand(len(motifidx(s)))*0.0001 
@@ -698,7 +698,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             else:
                 for s in xrange(nstructs):
                     if x[s] <= 0.001:
-                        E_d__obs[s] = 0.0001*rand()
+                        E_d__obs[s] = 0.001
                     else:
                         E_d__obs[s] = x[s]
                     if add_rand:
@@ -762,6 +762,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             for s in xrange(nstructs):
                 sigma_d__obs[0,s] = sqrt(1/(Psi_inv[0,0]*(W[:,s]**2).sum()))
+
 
         return mat(E_d__obs), E_ddT__obs, sigma_d__obs, E_c__obs
 

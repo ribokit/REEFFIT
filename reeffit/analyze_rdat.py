@@ -117,14 +117,29 @@ last_seqpos = 0
 def valid(seq):
     return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
 
-def make_struct_figs(structures, fprefix, indices=None, base_annotations=[], helix_function=lambda x,y:x):
-    options = {'baseOutline':rgb2hex(STRUCTURE_COLORS[i]), 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'}
+def make_struct_figs(structures, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
+    options = {'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'}
     if indices == None:
         indices = range(len(structures))
     for i, s in enumerate(structures):
         print s
+        options['baseOutline'] = rgb2hex(STRUCTURE_COLORS[i])
         varna = VARNA(sequences=[mutants[wt_idx]], structures=[ss.SecondaryStructure(dbn=remove_non_cannonical(s, mutants[0]))])
-        CMD = varna.rende(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options, base_annotations=base_annotations[i])
+        if base_annotations == None:
+            CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
+        else:
+            varna.annotation_font_size = 11
+            varna.annotation_color = annotation_color
+            if helix_fractions == None:
+                helix_frac_annotations = ''
+                base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function)
+            else:
+                helix_frac_annotations = varna._get_base_annotation_string([helix_fractions[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0)
+                varna.annotation_color = '#0033CC'
+                base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=1)
+            options['annotations'] = helix_frac_annotations.strip('"')
+            options['annotations'] += base_weight_annotations.strip('"')
+            CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
         print CMD
         os.system(CMD)
 
@@ -912,6 +927,27 @@ if args.compilebootstrap:
     Wcompile_std = Wcompile.std(axis=2)
     Wcompile_mean = Wcompile.mean(axis=2)
 
+    if len(structures) > MAX_STRUCTURES_PLOT:
+        base_annotations = []
+        helix_fractions = []
+        for m in maxmedoids:
+            for structs in assignments.values():
+                if m in structs:
+                    struct_objs = [ss.SecondaryStructure(dbn=structures[s]) for s in structs]
+                    bp_weights = ss.base_pair_fractions_in_structures(ss.SecondaryStructure(dbn=structures[m]), struct_objs, factors=[Wcompile_mean[wt_idx, structs].sum()]*len(structs))
+                    bp_fractions = ss.base_pair_fractions_in_structures(ss.SecondaryStructure(dbn=structures[m]), struct_objs)
+                    for bp in bp_fractions:
+                        bp_fractions[bp] = str(bp_fractions[bp]) + '%'
+                    for bp in bp_weights:
+                        bp_weights[bp] = str(bp_weights[bp]) + '%'
+                    base_annotations.append(bp_weights)
+                    helix_fractions.append(bp_fractions)
+        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_fractions=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
+        #make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
+        #make_struct_figs([structures[m] for m in maxmedoids], 'cluster_', base_annotations=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))), annotation_color='#0033CC')
+        exit()
+
+
     fa.analyze(max_iterations=1, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, hard_em=args.hardem, W0=Wcompile_mean)
 
     _, data_pred_boot, _ = fa.correct_scale(stype=args.scalemethod)
@@ -930,20 +966,6 @@ if args.compilebootstrap:
 
     E_dcompile_std = fa.sigma_d
     E_dcompile_mean = fa.E_d
-
-    if len(structures) > MAX_STRUCTURES_PLOT:
-        base_annotations = []
-        for m in maxmedoids:
-            for structs in assignments:
-                if s in structs:
-                    struct_objs = [ss.SecondaryStructure(dbn=structures[s]) for s in structs]
-                    bp_fractions = ss.base_pair_fractions_in_structures(ss.SecondaryStructure(dbn=structures[m]), struct_objs, factors=Wcompile_mean[wt_idx, structs])
-                    annotations = []
-                    for bp, frac in bp_fractions.iteritems():
-                        annotations.append((bp[0], frac))
-                        annotations.append((bp[1], frac))
-                    base_annotations.append(annotations)
-        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_function=lambda x,y: '%3.2f' % max(float(x)/100.,float(y)/100.)*100.)
 
 
 

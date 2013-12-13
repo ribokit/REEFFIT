@@ -89,6 +89,7 @@ carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
         'decompose', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
         'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize']
 MAX_STRUCTURES_PLOT = 10
+rdatname = args.rdatfile.name[args.rdatfile.name.rfind('/')+1:].split('_')[0]
 
 print 'Parsing RDAT'
 rdat = RDATFile()
@@ -128,7 +129,7 @@ def make_struct_figs(structures, fprefix, indices=None, base_annotations=None, h
         if base_annotations == None:
             CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
         else:
-            varna.annotation_font_size = 11
+            varna.annotation_font_size = 13
             varna.annotation_color = annotation_color
             if helix_fractions == None:
                 helix_frac_annotations = ''
@@ -136,7 +137,7 @@ def make_struct_figs(structures, fprefix, indices=None, base_annotations=None, h
             else:
                 helix_frac_annotations = varna._get_base_annotation_string([helix_fractions[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0)
                 varna.annotation_color = '#0033CC'
-                base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=1)
+                base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0, base_offset=-2)
             options['annotations'] = helix_frac_annotations.strip('"')
             options['annotations'] += base_weight_annotations.strip('"')
             CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
@@ -758,7 +759,7 @@ else:
     r = range(data_cutoff.shape[1])
 
     # Structure cluster landscape plot for wild type
-    PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:])
+    PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:], names=[ '%s%s' % (rdatname.upper(), m) for m in maxmedoids])
     savefig('%s/pca_landscape_plot_WT.png' % prefix, dpi=args.dpi)
 
     for i in arange(0, data_cutoff.shape[0], args.splitplots):
@@ -942,7 +943,7 @@ if args.compilebootstrap:
                         bp_weights[bp] = str(bp_weights[bp]) + '%'
                     base_annotations.append(bp_weights)
                     helix_fractions.append(bp_fractions)
-        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_fractions=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
+        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', indices=maxmedoids, base_annotations=base_annotations, helix_fractions=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
         #make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
         #make_struct_figs([structures[m] for m in maxmedoids], 'cluster_', base_annotations=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))), annotation_color='#0033CC')
         exit()
@@ -961,7 +962,7 @@ if args.compilebootstrap:
         figure(1)
         clf()
         plot_mutxpos_image(data_pred_boot[i:i+args.splitplots], sequence, seqpos_cutoff, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)], vmax=data_cutoff[i:i+args.splitplots,:].mean())
-        savefig('%s/reeffit_data_pred_bootstrapped%s.png' % (args.outprefix, isuffix), dpi=args.dpi)
+        savefig('%s/bootstrap_reeffit_data_pred%s.png' % (args.outprefix, isuffix), dpi=args.dpi)
 
 
     E_dcompile_std = fa.sigma_d

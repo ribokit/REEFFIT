@@ -10,39 +10,36 @@ import os
 import argparse
 from plot_utils import plot_mutxpos_image
 import pickle
+import pdb
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('resultdir', type=argparse.FileType('r'))
+parser.add_argument('resultdir', type=str)
 parser.add_argument('name', type=str)
 parser.add_argument('prefix', type=str)
 
 args = parser.parse_args()
 
-result_dir = args.result_dir + '/'
+result_dir = args.resultdir + '/'
 template_dir = os.environ['REEFFIT_HOME'] + '/svg_templates/'
 
 def fill_in_template(data_dict, templatefile, svgfile):
     for line in templatefile.readlines():
         newline = line
         for tag, value in data_dict.iteritems():
-            newline = newline.replace('{%s}' % tag, value)
+            newline = newline.replace('{%s}' % tag, str(value))
         svgfile.write(newline)
     return svgfile
 
 def get_attributes(line):
-    att = ''
-    attributes = []
-    for s in line:
-        if read:
-            att += s
-        if s == '"' and not read:
-            read = True
-        if s == '"' and read:
-            read = False
-            attributes.append(att)
-            att = ''
-    return attributes
+    att_dict = {}
+    k = ''
+    readval = False
+    for x in line.split():
+        if '=' in x:
+            k, v = x.strip(' ">\n').split('=')
+            att_dict[k] = v.strip('"')
+    return att_dict
 
 def generate_structure_grid(structure_files, titles):
     svgstrings = ['']*len(structure_files)
@@ -55,70 +52,126 @@ def generate_structure_grid(structure_files, titles):
                 read = True
             if read:
                 attributes =  get_attributes(line)
-                for att in attributes:
-                    try:
-                        val = float(att)
-                        if val < bounding_box[0]:
-                            bounding_box[0] = val
-                        if val > bounding_box[1]:
-                            bounding_box[1] = val
-                    except ValueError:
-                        pass
+                kx = ''
+                ky = ''
+                if 'x2' in attributes:
+                    kx = 'x2'
+                    ky = 'y2'
+                elif 'x' in attributes:
+                    kx = 'x'
+                    ky = 'y'
+                else:
+                    pass
+                if kx:
+                    if float(attributes[kx]) > bounding_box[0]:
+                        bounding_box[0] = float(attributes[kx])
+                    if float(attributes[ky]) > bounding_box[1]:
+                        bounding_box[1] = float(attributes[ky])
                 if '</svg>' in line:
                     break
                 svgstrings[i] += line
         bounding_boxes.append(bounding_box)
+    text_padding = 25
+    padding = 100
     xoffset = 0
     yoffset = 0
-    max_bounding_x = 0
     j = 0
     gridstr = ''
-    max_bounding_x = 0
+    max_bounding_box = [0,0]
     for i, svgs in enumerate(svgstrings):
-        if j > 3:
+        if j >= 3:
             j = 0
-            xoffset += max_bounding_x
-            yoffset = 0
-            max_bounding_x = 0
-        title = '<text x="%s" y="%s" text-anchor="middle" font-family="Verdana"' % (xoffset, yoffset)
-        title += 'font-size="12" fill="rgb(25%%, 25%%, 25%%)">%s</text>\n' % titles[i]
-        yoffset += 15
+            xoffset += max_bounding_box[0] + padding
+            yoffset = text_padding
+            max_bounding_box[0] = 0
+        yoffset += text_padding + padding
+        title = '<text x="%s" y="%s" text-anchor="start" font-family="Garamond"' % (xoffset, yoffset)
+        title += ' font-style="italic" font-size="35" fill="rgb(25%%, 25%%, 25%%)">%s</text>\n' % titles[i]
         group_head = '<g\n   transform="translate(%s, %s)">\n' % (xoffset, yoffset)
         gridstr += title + group_head + svgs + '</g>\n'
         yoffset += bounding_boxes[i][1]
-        max_bounding_x = max(max_bounding_x, bounding_boxes[i][0])
+        max_bounding_box[0] = max(max_bounding_box[0], bounding_boxes[i][0])
+        max_bounding_box[1] = max(yoffset + padding, max_bounding_box[1])
         j += 1
-    return gridstr
+    max_bounding_box[0] += xoffset
+    return gridstr, max_bounding_box[0], max_bounding_box[1]
     
+all_svg_files = []
 
-# Structure plot
+print 'Generating structures page'
 structure_files = []
 titles = []
 for fname in os.listdir(result_dir):
-    if '%s_structure' % args.prefix in fname and '.svg' in fname:
+    if '%s_structure' % args.prefix in fname and '.svg' in fname and '_page' not in fname:
         structure_files.append(open(result_dir + fname))
-        idx = fname.replace('%s_structure', '').replace('.svg','')
+        idx = fname.replace('%s_structure' % args.prefix, '').replace('.svg','')
         titles.append(args.name + idx)
-data_dict['structure_grid'] = generate_structure_grid(structure_files, titles)
-svgfile = fill_in_template(data_dict, template_dir + 'structures.svg', open('%s%s_structure_page.svg' % (result_dir, args.prefix)))
+data_dict = {}
+data_dict['structure_grid'], grid_xoffset, grid_yoffset = generate_structure_grid(structure_files, titles)
+data_dict['pca_img'] = os.path.abspath(result_dir + 'pca_landscape_plot_WT.png')
+data_dict['pca_x'] = grid_xoffset + 50
+data_dict['pca_y'] = 25
+data_dict['pca_height'] = 1200
+data_dict['pca_width'] = 1600
+data_dict['pc1_labelx'] = data_dict['pca_width'] * 0.5
+data_dict['pc1_labely'] = data_dict['pca_height'] - 20
+data_dict['pc2_labelx'] = 100 
+data_dict['pc2_labely'] = data_dict['pca_height'] * 0.5
+data_dict['size_x'] = grid_xoffset + data_dict['pca_width']
+data_dict['size_y'] = max(data_dict['pca_height'], grid_yoffset)
+svgfile = fill_in_template(data_dict, open(template_dir + 'structures.svg'), open('%s%s_structure_page.svg' % (result_dir, args.prefix), 'w'))
 svgfile.close()
+all_svg_files.append(svgfile.name)
 
+print 'Generating weights by mutant and predicted data page'
+data_dict = {}
+for img in ['weights_by_mutant', 'reeffit_data_pred']:
+    data_dict['%s_img' % img] = os.path.abspath('%s%s_%s.png' % (result_dir, args.prefix, img))
 
-"""
-currdir = os.getcwd()
-
-        newline = line.replace('{exportdir}', result_dir).replace('{name}', outname).replace('{figdir}', '').replace('{id}', outname)
-print 'Making SVG file for %s' % outname
-templatefile = open(templatefname)
-svgfile = open('%s/%s_paper_figure.svg' % (result_dir, outname), 'w')
+data_dict['real_data_img'] =  os.path.abspath('%sreal_data.png' % result_dir)
+data_dict['data_vs_predicted_img'] =  os.path.abspath('%s%s_data_vs_predicted_0_WT.png' % (result_dir, args.prefix))
+svgfile = fill_in_template(data_dict, open(template_dir + 'weights_and_data.svg'), open('%s%s_weights_and_data_page.svg' % (result_dir, args.prefix), 'w'))
 svgfile.close()
-templatefile.close()
+all_svg_files.append(svgfile.name)
 
-print 'Exporting to PDF'
-os.chdir(result_dir)
-os.system('inkscape -z -D --file=%s_paper_figure.svg --export-pdf=%s_paper_figure.pdf --export-area-drawing  --export-text-to-path' % (outname, outname))
-os.chdir(currdir)
-"""
+print 'Generating all latent reactivities page'
+data_dict = {}
+data_dict['all_reactivities_img'] =  os.path.abspath('%sE_d.png' % result_dir)
+svgfile = fill_in_template(data_dict, open(template_dir + 'all_latent_reactivities.svg'), open('%s%s_all_latent_reactivities_page.svg' % (result_dir, args.prefix), 'w'))
+svgfile.close()
+all_svg_files.append(svgfile.name)
+
+print 'Generating reactivities and weights pages'
+
+data_dict = {}
+page_idx = 1
+i = 0
+for fname in os.listdir(result_dir):
+    if '%s_exp_react_struct_' % args.prefix in fname and '.png':
+        if i > 4:
+            svgfile = fill_in_template(data_dict, open(template_dir + 'reactivities_and_weights_%s.svg' % (i + 1)), open('%s%s_reactivities_and_weights_page%s.svg' % (result_dir, args.prefix, page_idx), 'w'))
+            svgfile.close()
+            all_svg_files.append(svgfile.name)
+            i = 0
+            page_idx += 1
+            data_dict = {}
+        struct_idx = fname.replace('%s_exp_react_struct_' % args.prefix, '').replace('.png', '')
+        data_dict['exp_react_%s_img' % i] = os.path.abspath(result_dir + fname)
+        data_dict['weights_%s_img' % i] = os.path.abspath(result_dir + '%s_weights_by_mutant_structure_%s.png' % (args.prefix, struct_idx))
+        i += 1
+i -= 1
+if i <= 4:
+    svgfile = fill_in_template(data_dict, open(template_dir + 'reactivities_and_weights_%s.svg' % (i + 1)), open('%s%s_reactivities_and_weights_page%s.svg' % (result_dir, args.prefix, page_idx), 'w'))
+    svgfile.close()
+    all_svg_files.append(svgfile.name)
+
+print 'Making PDFs from SVGs'
+for svgfname in all_svg_files:
+    os.system('inkscape -z -D --file=%s --export-pdf=%s --export-area-drawing  --export-text-to-path' % (svgfname, svgfname.replace('.svg','.pdf')))
+
+print 'Compiling full report'
+os.system('pdfunite %s %s%s_report.pdf' % (' '.join([x.replace('.svg', '.pdf') for x in all_svg_files]), result_dir, args.prefix))
+
 print 'Done'
 
 

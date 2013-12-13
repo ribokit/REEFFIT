@@ -10,7 +10,10 @@ To install:
 * Run:
  <code>python setup.py install</code>
 
-* In your <code>.bashrc</code>, include a line like:
+* In your profile (e.g. <code>.bashrc</code>), include an environment variable REEFFIT_HOME that points to the REEFFIT home directory, e.g. something like:
 
-<code>export REEFFIT_HOME=/Users/your_name/src/reeffit</code>
+<code>export REEFFIT_HOME=/tsuname/your_name/src/reeffit</code>
+
+* Note that you should have rdatkit installed and properly set up as well (see https://github.com/hitrace/rdatkit)
+
 

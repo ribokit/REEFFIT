@@ -81,7 +81,7 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
-def PCA_structure_plot(structures, assignments, medoids, weights=None):
+def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, weights=None, names=None):
     all_struct_vecs = []
     all_struct_indices = []
     select_struct_vecs = []
@@ -105,6 +105,8 @@ def PCA_structure_plot(structures, assignments, medoids, weights=None):
     all_struct_coordinates = dot(all_struct_vecs, basis)
     select_struct_coordinates = dot(select_struct_vecs, basis)
     
+    all_sizes = 50
+    medoid_sizes = 100
     if weights == None:
         all_structure_colors = [cluster_colors[struct_to_clust[i]] for i in all_struct_indices]
         medoid_colors = [cluster_colors[struct_to_clust[i]] for i in medoids]
@@ -112,12 +114,22 @@ def PCA_structure_plot(structures, assignments, medoids, weights=None):
     else:
         cmap = get_cmap('jet')
         normf = Normalize(vmin=0, vmax=max(weights), clip=True)
-        all_structure_colors = [cmap(normf(weights[i])) for i in all_struct_indices]
-        medoid_colors = [cmap(normf(weights[i])) for i in medoids]
-        linewidth = 0
+        if colorbyweight:
+            all_structure_colors = [cmap(normf(weights[i])) for i in all_struct_indices]
+            medoid_colors = [cmap(normf(weights[i])) for i in medoids]
+            linewidth = 0
+        else:
+            all_structure_colors = [cluster_colors[struct_to_clust[i]] for i in all_struct_indices]
+            medoid_colors = [cluster_colors[struct_to_clust[i]] for i in medoids]
+            all_sizes = [max(50, weights[i]*30000) for i in all_struct_indices]
+            medoid_sizes = [max(50, weights[i]*30000) for i in medoids]
+            linewidth = 1
 
     figure(1)
     clf()
 
-    scatter(all_struct_coordinates[:,0], all_struct_coordinates[:,1], c=all_structure_colors, alpha=0.6, linewidth=linewidth, s=50)
-    scatter(select_struct_coordinates[:,0], select_struct_coordinates[:,1], c=medoid_colors, linewidth=2, marker='D', s=100)
+    scatter(all_struct_coordinates[:,0], all_struct_coordinates[:,1], c=all_structure_colors, alpha=0.6, linewidth=linewidth, s=all_sizes)
+    scatter(select_struct_coordinates[:,0], select_struct_coordinates[:,1], c=medoid_colors, linewidth=2, marker='D', s=medoid_sizes)
+    if names != None:
+        for i, m in enumerate(medoids):
+            text(select_struct_coordinates[i,0], select_struct_coordinates[i,1], names[i], style='italic')

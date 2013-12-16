@@ -759,7 +759,7 @@ else:
     r = range(data_cutoff.shape[1])
 
     # Structure cluster landscape plot for wild type
-    PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:], names=[ '%s%s' % (rdatname.upper(), m) for m in maxmedoids])
+    PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:], names=[ '%s_%s' % (rdatname.upper(), m) for m in maxmedoids])
     savefig('%s/pca_landscape_plot_WT.png' % prefix, dpi=args.dpi)
 
     for i in arange(0, data_cutoff.shape[0], args.splitplots):
@@ -961,7 +961,7 @@ if args.compilebootstrap:
                     for bp in bp_fractions:
                         bp_fractions_str[bp] = '%3.2f%%' % bp_fractions[bp]
                     for bp in bp_weights:
-                        bp_weights_str[bp] = '%3.2f%% +/- %3.2f' % (bp_weights[bp], bp_fractions[bp]*sqrt(bp_weights_std[bp])/100.)
+                        bp_weights_str[bp] = '%3.2f%% +/- %3.2f' % (bp_weights[bp], sqrt(bp_weights_std[bp]))
                     base_annotations.append(bp_weights_str)
                     helix_fractions.append(bp_fractions_str)
         def helix_function(x,y):
@@ -1009,7 +1009,6 @@ if args.compilebootstrap:
     xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
     ylim(0,4)
     legend()
-    pdb.set_trace()
     savefig('%s/bootstrap_data_vs_predicted_WT.png' % args.outprefix)
 
     r = range(data_cutoff.shape[1])
@@ -1023,7 +1022,6 @@ if args.compilebootstrap:
         savefig('%s/bootstrap_exp_react_struct_%s.png' % (args.outprefix, s), dpi=args.dpi)
 
     overall_wt_fractions_file = open('%s/bootstrap_overall_wt_fractions.txt' % (args.outprefix), 'w')
-    pdb.set_trace()
     figure(3)
     clf()
     ax = subplot(111)

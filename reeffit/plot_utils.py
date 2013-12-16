@@ -132,4 +132,6 @@ def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, we
     scatter(select_struct_coordinates[:,0], select_struct_coordinates[:,1], c=medoid_colors, linewidth=2, s=medoid_sizes)
     if names != None:
         for i, m in enumerate(medoids):
-            text(select_struct_coordinates[i,0], select_struct_coordinates[i,1], names[i], style='italic')
+            if '_' in names[i]:
+                names[i] = names[i].replace('_', '_{') + '}'
+            text(select_struct_coordinates[i,0], select_struct_coordinates[i,1], '$' + names[i] + '$', style='italic')

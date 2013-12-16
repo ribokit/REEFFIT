@@ -719,7 +719,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     print 'Blaming E_ddT__obs singularities on data similarity'
                     print 'Adding a bit of white noise to alleviate'
                     A, b = fill_matrices(A, b, contact_prior_factor)
-                    add_rand = True
+                    #add_rand = True
 
                    
                 print 'MAP system was not solved properly retrying with different contact priors'

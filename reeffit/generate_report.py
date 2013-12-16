@@ -94,7 +94,7 @@ def generate_structure_grid(structure_files, titles, fractions, fractions_std):
                     break
                 svgstrings[i] += line
         bounding_boxes.append(bounding_box)
-    text_padding = 25
+    text_padding = 50
     padding = 100
     xoffset = 0
     yoffset = 0
@@ -107,12 +107,16 @@ def generate_structure_grid(structure_files, titles, fractions, fractions_std):
             xoffset += max_bounding_box[0] + padding
             yoffset = text_padding
             max_bounding_box[0] = 0
-        yoffset += text_padding + padding
+        yoffset += padding
 
-        title = '<text x="%s" y="%s" text-anchor="start" font-family="Garamond"' % (xoffset, yoffset)
         name, subidx = titles[i].split('_')
-        title += ' font-style="italic" font-size="35" fill="%s">%s<tspan baseline-shift ="sub">%s</tspan>: %3.2f%% +/- %3.2f</text>\n' % (colors[i], name, subidx, fractions[i], fractions_std[i])
-        
+        title = '<text x="%s" y="%s" text-anchor="start" font-family="Garamond"' % (xoffset, yoffset)
+        title += ' font-style="italic" font-size="35" fill="%s">%s<tspan baseline-shift ="sub">%s</tspan></text>\n' % (colors[i], name, subidx)
+        yoffset += text_padding
+        title += '<text x="%s" y="%s" text-anchor="start" font-family="Garamond"' % (xoffset, yoffset)
+        title += ' font-style="italic" font-size="35" fill="%s">%3.2f%% +/- %3.2f</text>\n' % (colors[i], fractions[i], fractions_std[i])
+       
+        yoffset += text_padding
         group_head = '<g\n   transform="translate(%s, %s)">\n' % (xoffset, yoffset)
         gridstr += title + group_head + svgs + '</g>\n'
         yoffset += bounding_boxes[i][1]

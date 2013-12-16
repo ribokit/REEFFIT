@@ -798,6 +798,8 @@ else:
         savefig('%s/E_d%s.png' % (prefix, isuffix), dpi=args.dpi+100)
 
         # Plot weights
+
+        overall_wt_fractions_file = open('%s/overall_wt_fractions.txt' % (args.outprefix), 'w')
         figure(3)
         clf()
         ax = subplot(111)
@@ -810,6 +812,9 @@ else:
                 clf()
                 weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], W_ref=W_0[i:i+args.splitplots,:], idx=j, assignments=assignments, medoids=maxmedoids)
                 savefig('%s/weights_by_mutant_structure%s_%s.png' % (prefix, isuffix, j), dpi=100)
+                for structs in assignments.values():
+                    if j in structs:
+                        overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, W_fa[wt_idx, structs].sum(), sqrt((W_fa_std[wt_idx, structs]**2).sum())))
 
 
         else:
@@ -821,6 +826,7 @@ else:
                 clf()
                 weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], W_ref=W_0[i:i+args.splitplots,:], idx=j)
                 savefig('%s/weights_by_mutant_structure%s_%s.png' % (prefix, isuffix, j), dpi=100)
+                overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, W_fa[wt_idx, j], W_fa_std[wt_idx, j]))
 
 
 
@@ -845,6 +851,18 @@ else:
                 expected_reactivity_plot(E_d_fa[s,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
             xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
             savefig('%s/exp_react_struct_%s.png' % (prefix, s), dpi=args.dpi)
+
+            # Plot WT predicted vs real
+            f = figure(5)
+            f.set_size_inches(15, 5)
+            clf()
+            plot(r, data_cutoff[wt_idx,I], color='r', label='Data', linewidth=2)
+            errorbar(r, data_pred[wt_idx,:], yerr=sigma_pred[wt_idx,:], color='b', label='Predicted', linewidth=2)
+            title('WT')
+            xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
+            ylim(0,4)
+            legend()
+            savefig('%s/data_vs_predicted_WT.png' % prefix)
 
 
 
@@ -886,7 +904,7 @@ else:
             plot(x, fa.paired_pdf(x), 'r', linewidth=2)
             ylim(0, max(fa.paired_pdf(x)) + 0.5)
             savefig('%sprior_paired.png' % args.outprefix, dpi=args.dpi)
-            # Plot data vs predicted for each measurement
+            # Plot all data vs predicted for each measurement
             r = range(data_cutoff.shape[1])
             for i in xrange(data_cutoff.shape[0]):
                 f = figure(5)
@@ -896,7 +914,7 @@ else:
                 errorbar(r, data_pred[i,:], yerr=sigma_pred[i,:], color='b', label='Predicted', linewidth=2)
                 title('%s' % mut_labels[i])
                 xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
-                ylim(0,3)
+                ylim(0,4)
                 legend()
                 savefig('%s/data_vs_predicted_%s_%s.png' % (prefix, i, mut_labels[i]))
 
@@ -936,22 +954,30 @@ if args.compilebootstrap:
                 if m in structs:
                     struct_objs = [ss.SecondaryStructure(dbn=structures[s]) for s in structs]
                     bp_weights = ss.base_pair_fractions_in_structures(ss.SecondaryStructure(dbn=structures[m]), struct_objs, factors=[Wcompile_mean[wt_idx, structs].sum()]*len(structs))
+                    bp_weights_std = ss.base_pair_fractions_in_structures(ss.SecondaryStructure(dbn=structures[m]), struct_objs, factors=[(Wcompile_std[wt_idx, structs]**2).sum()]*len(structs))
                     bp_fractions = ss.base_pair_fractions_in_structures(ss.SecondaryStructure(dbn=structures[m]), struct_objs)
+                    bp_fractions_str = {}
+                    bp_weights_str = {}
                     for bp in bp_fractions:
-                        bp_fractions[bp] = str(bp_fractions[bp]) + '%'
+                        bp_fractions_str[bp] = '%3.2f%%' % bp_fractions[bp]
                     for bp in bp_weights:
-                        bp_weights[bp] = str(bp_weights[bp]) + '%'
-                    base_annotations.append(bp_weights)
-                    helix_fractions.append(bp_fractions)
-        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', indices=maxmedoids, base_annotations=base_annotations, helix_fractions=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
+                        bp_weights_str[bp] = '%3.2f%% +/- %3.2f' % (bp_weights[bp], bp_fractions[bp]*sqrt(bp_weights_std[bp])/100.)
+                    base_annotations.append(bp_weights_str)
+                    helix_fractions.append(bp_fractions_str)
+        def helix_function(x,y):
+            extract_val = lambda v: float(v.split('%')[0])
+            if extract_val(x) > extract_val(y):
+                return x
+            else:
+                return y
+        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', indices=maxmedoids, base_annotations=base_annotations, helix_fractions=helix_fractions, helix_function=helix_function)
         #make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
         #make_struct_figs([structures[m] for m in maxmedoids], 'cluster_', base_annotations=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))), annotation_color='#0033CC')
-        exit()
 
 
     fa.analyze(max_iterations=1, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, hard_em=args.hardem, W0=Wcompile_mean)
 
-    _, data_pred_boot, _ = fa.correct_scale(stype=args.scalemethod)
+    _, data_pred_boot, sigma_pred_boot = fa.correct_scale(stype=args.scalemethod)
 
     for i in arange(0, data_cutoff.shape[0], args.splitplots):
         if i == 0 and args.splitplots == data_cutoff.shape[0]:
@@ -973,6 +999,18 @@ if args.compilebootstrap:
     bootfactor = sqrt(nboot)
     bootfactor = 1
 
+    # Plot WT predicted vs real
+    f = figure(5)
+    f.set_size_inches(15, 5)
+    clf()
+    plot(r, data_cutoff[wt_idx,:], color='r', label='Data', linewidth=2)
+    errorbar(r, data_pred_boot[wt_idx,:], yerr=sigma_pred_boot[wt_idx,:], color='b', label='Predicted', linewidth=2)
+    title('WT')
+    xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
+    ylim(0,4)
+    legend()
+    pdb.set_trace()
+    savefig('%s/bootstrap_data_vs_predicted_WT.png' % args.outprefix)
 
     r = range(data_cutoff.shape[1])
     for s in maxmedoids:
@@ -984,6 +1022,8 @@ if args.compilebootstrap:
         xticks(r[0:len(r):5], seqpos_cutoff[0:len(seqpos_cutoff):5], rotation=90)
         savefig('%s/bootstrap_exp_react_struct_%s.png' % (args.outprefix, s), dpi=args.dpi)
 
+    overall_wt_fractions_file = open('%s/bootstrap_overall_wt_fractions.txt' % (args.outprefix), 'w')
+    pdb.set_trace()
     figure(3)
     clf()
     ax = subplot(111)
@@ -995,6 +1035,9 @@ if args.compilebootstrap:
             clf()
             weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_ref=W_0, idx=j, assignments=assignments, medoids=maxmedoids)
             savefig('%s/bootstrap_weights_by_mutant_structure_%s.png' % (args.outprefix, j), dpi=100)
+            for structs in assignments.values():
+                if j in structs:
+                    overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, Wcompile_mean[wt_idx, structs].sum(), sqrt((Wcompile_std[wt_idx, structs]**2).sum())))
 
     else:
         weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels)
@@ -1004,6 +1047,7 @@ if args.compilebootstrap:
             clf()
             weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_ref=W_0, idx_offset=j)
             savefig('%s/bootstrap_weights_by_mutant_structure_%s.png' % (args.outprefix, j), dpi=100)
+            overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, Wcompile_mean[wt_idx, j], Wcompile_std[wt_idx, j]))
 
 
 

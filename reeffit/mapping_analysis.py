@@ -692,7 +692,6 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         E_d__obs[motifidx(s)] = 0.001
                     else:
                         E_d__obs[motifidx(s)] = x[s]
-                        E_d__obs[motifidx(s)] += rand(len(motifidx(s)))*0.0001 
                     if add_rand:
                         E_d__obs[motifidx(s)] += rand(len(motifidx(s)))*0.0001 
             else:

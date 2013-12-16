@@ -121,15 +121,15 @@ def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, we
         else:
             all_structure_colors = [cluster_colors[struct_to_clust[i]] for i in all_struct_indices]
             medoid_colors = [cluster_colors[struct_to_clust[i]] for i in medoids]
-            all_sizes = [max(50, weights[i]*30000) for i in all_struct_indices]
-            medoid_sizes = [max(50, weights[i]*30000) for i in medoids]
+            all_sizes = array([max(50, log(1 + weights[i])*5e4) for i in all_struct_indices])
+            medoid_sizes = array([max(50, log(1 + weights[i])*5e4) for i in medoids])
             linewidth = 1
 
     figure(1)
     clf()
 
     scatter(all_struct_coordinates[:,0], all_struct_coordinates[:,1], c=all_structure_colors, alpha=0.6, linewidth=linewidth, s=all_sizes)
-    scatter(select_struct_coordinates[:,0], select_struct_coordinates[:,1], c=medoid_colors, linewidth=2, marker='D', s=medoid_sizes)
+    scatter(select_struct_coordinates[:,0], select_struct_coordinates[:,1], c=medoid_colors, linewidth=2, s=medoid_sizes)
     if names != None:
         for i, m in enumerate(medoids):
             text(select_struct_coordinates[i,0], select_struct_coordinates[i,1], names[i], style='italic')

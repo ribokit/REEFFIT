@@ -33,7 +33,7 @@ def expected_reactivity_plot(react, struct, yerr=None, ymin=0, ymax=5, seq_indic
     ylim(0,5)
     xlim(1,len(react))
 
-def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLORS, W_ref=None, idx=-1, assignments=None, medoids=None):
+def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLORS, W_ref=None, W_samples=None, idx=-1, assignments=None, medoids=None):
     ax = subplot(111)
     if assignments == None:
         _W = W
@@ -57,13 +57,27 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
                 if not setidx:
                     idx = i
                     setidx = True
-                
-            for s in si:
-                _W[:,i] += W[:,s]
-                if _W_ref != None:
-                    _W_ref[:,i] += W_ref[:,s]
-                _W_err[:,i] += W_err[:,s]**2
-            _W_err[:,i] = sqrt(_W_err[:,i])
+
+            _W[:,i] = W[:,si].sum(axis=1)
+
+            if _W_ref != None:
+                _W_ref[:,i] = W_ref[:,si].sum(axis=1)
+
+            if W_samples != None:
+                """
+                a = ones(len(si))
+                for j in xrange(_W_err.shape[0]):
+                    _W_err[j,i] = dot(dot(a, cov(W_samples[j,si,:])), a.T)
+                print sqrt(_W_err[0,:])
+                """
+                _W_err[:,i] = W_samples[:,si,:].sum(axis=1).std(axis=1)
+                print W_samples[:,si,:].sum(axis=1)
+                print _W_err[0,:]
+                pdb.set_trace()
+            else:
+                _W_err[:,i] = (W_err[:,si]**2).sum(axis=1)
+            #_W_err[:,i] = sqrt(_W_err[:,i])
+
             i += 1
     if idx >= 0:
         weight_range = [idx]

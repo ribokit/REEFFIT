@@ -1031,7 +1031,7 @@ if args.compilebootstrap:
         for j in maxmedoids:
             figure(3)
             clf()
-            weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_ref=W_0, idx=j, assignments=assignments, medoids=maxmedoids)
+            weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_samples=Wcompile, W_ref=W_0, idx=j, assignments=assignments, medoids=maxmedoids)
             savefig('%s/bootstrap_weights_by_mutant_structure_%s.png' % (args.outprefix, j), dpi=100)
             for structs in assignments.values():
                 if j in structs:

@@ -12,6 +12,7 @@ from rdatkit.datahandlers import RDATFile
 from rdatkit import mapping
 from plot_utils import *
 from map_analysis_utils import *
+import map_analysis_utils
 from random import choice, sample
 import mapping_analysis
 from itertools import chain
@@ -22,14 +23,16 @@ parser.prog = 'reeffit'
 # General options
 parser.add_argument('rdatfile', type=argparse.FileType('r'), help='The RDAT file that has the multi-dimensional chemical mapping data')
 parser.add_argument('outprefix', type=str, help='Prefix (e.g. directory) that all resulting reports, plot files, etc. will have')
+parser.add_argument('--addrdatfiles', type=argparse.FileType('r'), nargs='+', default=[], help='Additional rdat files that contain the multi-dimensional chemical mapping data')
 parser.add_argument('--priorweights', type=str, default='rnastructure', help='Algorithm to use for starting structure weights. Can be "rnastructure", "viennarna", and "uniform"')
 parser.add_argument('--njobs', type=int, default=None, help='For soft EM analysis. Number of parallel jobs to run the E-step on')
 
 # Input structures options
 parser.add_argument('--structfile', default=None, type=argparse.FileType('r'), help='Text files with structures to analyze, one per line, in dot-bracket notation')
 parser.add_argument('--clusterfile', default=None, type=argparse.FileType('r'), help='File with clusters of structures: one structure per line, with tab-delimited fields. Format is cluster_id, dot-bracket structure, comma-separated energies per cluster' )
-parser.add_argument('--medoidfile', default=None, type=argparse.FileType('r'), help='File specifying the medoid structures of each cluster. Must also specify a clusterfile.')
+parser.add_argument('--medoidfile', default=None, type=argparse.FileType('r'), help='File specifying the medoid structures of each cluster.')
 parser.add_argument('--structset', default=None, type=str, help='Subset of structures in the specified structfile to use in the analysis. Each subset is identified by a "header" specified after a hash (#) preceding the set of structures. This option will search all headers for structset and analyze the data with those structures. Used in worker mode.')
+parser.add_argument('--structlabelfile', default=None, type=argparse.FileType('r'), help='File specifying labels (names) for the structures.')
 
 # Pre-processing options
 parser.add_argument('--cutoff', default=0, type=int, help='Number of data points and nucleotides to cut off from the beginning and end of the data and sequences: these will not be used in the analysis. Useful to avoid saturated "outliers" in the data.')
@@ -56,6 +59,7 @@ parser.add_argument('--maxlamreacts', type=int, default=10, help='For cross-vali
 parser.add_argument('--maxlamweights', type=int, default=10, help='For cross-validation setup. Maximum value of lam_weights to try')
 parser.add_argument('--msmaxsamples', type=int, default=inf, help='For MC model selection. Maximum number of structures per sample in MC simulation')
 parser.add_argument('--interpreter', type=str, default='python', help='For MC model selection. Python interpreter to use for the worker files')
+parser.add_argument('--nostructlabels', default=False, action='store_true', help='No labels (names) for the structures in PCA plot.')
 
 # Fitting options
 parser.add_argument('--nsim', default=1000, type=int, help='Number of simulations used for each E-step when performing soft EM.')
@@ -82,49 +86,17 @@ parser.add_argument('--dpi', type=int, default=200, help='DPI resolution for plo
 
 args = parser.parse_args()
 
-# Global variables
-model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic', 'cv':'Cross-validation', 'sample':'Suboptimal structure sampling'}
-worker_file_formats = ['gridengine', 'sh']
-carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
-        'decompose', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
-        'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize']
-MAX_STRUCTURES_PLOT = 10
-rdatname = args.rdatfile.name[args.rdatfile.name.rfind('/')+1:].split('_')[0]
-
-print 'Parsing RDAT'
-rdat = RDATFile()
-rdat.load(args.rdatfile)
-construct = rdat.constructs.values()[0]
-
-seqpos = construct.seqpos
-sorted_seqpos = sorted(seqpos)
-offset = construct.offset
-sequence = construct.sequence[min(seqpos) - offset - 1:max(seqpos) - offset].upper()
-sequence = construct.sequence.upper()
-
-
-print 'Parsing mutants and data'
-data = []
-
-mut_labels = []
-mutants = []
-mutpos = []
-wt_idx = 0
-use_struct_clusters = False
-concentrations = []
-kds = []
-last_seqpos = 0
-
+# Helper functions
 def valid(seq):
     return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
 
 def make_struct_figs(structures, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
-    options = {'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'}
+    options = {'drawBases':False, 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start, 'bp':'#000000'}
     if indices == None:
         indices = range(len(structures))
     for i, s in enumerate(structures):
         print s
-        options['baseOutline'] = rgb2hex(STRUCTURE_COLORS[i])
+        options['baseName'] = rgb2hex(STRUCTURE_COLORS[i])
         varna = VARNA(sequences=[mutants[wt_idx]], structures=[ss.SecondaryStructure(dbn=remove_non_cannonical(s, mutants[0]))])
         if base_annotations == None:
             CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
@@ -136,10 +108,10 @@ def make_struct_figs(structures, fprefix, indices=None, base_annotations=None, h
                 base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function)
             else:
                 helix_frac_annotations = varna._get_base_annotation_string([helix_fractions[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0)
-                varna.annotation_color = '#0033CC'
-                base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0, base_offset=-2)
+                #varna.annotation_color = '#0033CC'
+                #base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0, base_offset=-2)
             options['annotations'] = helix_frac_annotations.strip('"')
-            options['annotations'] += base_weight_annotations.strip('"')
+            #options['annotations'] += base_weight_annotations.strip('"')
             CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
         print CMD
         os.system(CMD)
@@ -152,6 +124,9 @@ def carry_on_option_string():
             if type(val) == bool:
                 if val:
                     options += ' --%s ' % opt
+            elif type(val) == list:
+                if len(val) > 0:
+                    options += ' --%s %s' % (opt, ' '.join(val))
             else:
                 options += ' --%s=%s ' % (opt, val)
     return options
@@ -221,72 +196,108 @@ def print_worker_options():
     print 'Worker file format is %s' % args.workerformat
 
 
-for idx, d in enumerate(construct.data):
-    if 'warning' in d.annotations:
-        continue
-    if args.titrate:
-        if 'chemical' in d.annotations:
-            chemfound = False
-            for item in d.annotations['chemical']:
-                chem, conc = item.split(':')[:2]
-                if chem == args.titrate:
-                    print 'Found concentration of chemical of interest (%s) for data at index %s: %s' % (chem, idx+1, conc)
-                    concentrations.append(float(conc.replace('uM', '')))
-                    chemfound = True
-            if not chemfound:
-                concentrations.append(0)
-    if 'mutation' in d.annotations:
-        label = d.annotations['mutation'][0]
-    else:
-        label = 'WT'
-    pos = []
-    if label == 'WT':
-        if 'sequence' in d.annotations:
-            mutant = d.annotations['sequence'][0]
-            pos = []
-            if not valid(sequence):
-                sequence = mutant
-            for i, ms in enumerate(mutant):
-                if ms != sequence[i] and len(pos) < 1:
-                    pos.append(i)
-                    if label == 'WT':
-                        label = '%s%s%s' % (sequence[i], i + construct.offset + 1, mutant[i])
-        if pos == []:
-            mutant = sequence
-            wt_idx = idx
-        mutpos.append(pos)
-    else:
-        if 'sequence' in d.annotations:
-            mutant = d.annotations['sequence'][0]
-            pos = []
-            if not valid(sequence):
-                sequence = mutant
-            for i, ms in enumerate(mutant):
-                if ms != sequence[i] and len(pos) < 1:
-                    pos.append(i)
+
+# Global variables
+model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic', 'cv':'Cross-validation', 'sample':'Suboptimal structure sampling'}
+worker_file_formats = ['gridengine', 'sh']
+carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
+        'decompose', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
+        'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize', 'addrdatfiles']
+MAX_STRUCTURES_PLOT = 10
+rdatname = args.rdatfile.name[args.rdatfile.name.rfind('/')+1:].split('_')[0]
+
+for rdatfile in [args.rdatfile] + args.addrdatfiles:
+
+    print 'Parsing RDAT %s' % rdatfile.name
+    rdat = RDATFile()
+    rdat.load(rdatfile)
+    construct = rdat.constructs.values()[0]
+
+    seqpos = construct.seqpos
+    sorted_seqpos = sorted(seqpos)
+    offset = construct.offset
+    sequence = construct.sequence[min(seqpos) - offset - 1:max(seqpos) - offset].upper()
+    sequence = construct.sequence.upper()
+
+
+    print 'Parsing mutants and data'
+    data = []
+
+    mut_labels = []
+    mutants = []
+    mutpos = []
+    wt_idx = 0
+    use_struct_clusters = False
+    concentrations = []
+    kds = []
+    last_seqpos = 0
+
+    for idx, d in enumerate(construct.data):
+        if 'warning' in d.annotations:
+            continue
+        if args.titrate:
+            if 'chemical' in d.annotations:
+                chemfound = False
+                for item in d.annotations['chemical']:
+                    chem, conc = item.split(':')[:2]
+                    if chem == args.titrate:
+                        print 'Found concentration of chemical of interest (%s) for data at index %s: %s' % (chem, idx+1, conc)
+                        concentrations.append(float(conc.replace('uM', '')))
+                        chemfound = True
+                if not chemfound:
+                    concentrations.append(0)
+        if 'mutation' in d.annotations:
+            label = d.annotations['mutation'][0]
         else:
-            pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
-            mutant = sequence[:pos[0]] + label[-1] + sequence[pos[0]+1:]
-        mutpos.append(pos)
-    if mutant in mutants and args.nomutrepeat:
-        continue
-    mut_labels.append(label)
-    mutants.append(mutant)
-    if not args.boxnormalize:
-        nd_tmp = normalize([d.values[seqpos.index(i)] for i in sorted_seqpos])
-        nd = [d.values[seqpos.index(i)] if d.values[seqpos.index(i)] >= 0 else 0.001 for i in sorted_seqpos]
-        #nd = [nd[i] if nd[i] < 4 else max(nd_tmp) for i in range(len(nd))]
-        #nd = [d.values[seqpos.index(i)] for i in sorted_seqpos]
-    else:
-        nd = normalize([d.values[seqpos.index(i)] for i in sorted_seqpos])
-    if args.clipzeros:
-        nd_last_sepos = len(seqpos)
-        for i in xrange(len(nd)-1, -1, -1):
-            if nd[i] != 0:
-                break
-            nd_last_seqpos = i
-        last_seqpos = max(nd_last_seqpos, last_seqpos)
-    data.append(nd)
+            label = 'WT'
+        pos = []
+        if label == 'WT':
+            if 'sequence' in d.annotations:
+                mutant = d.annotations['sequence'][0]
+                pos = []
+                if not valid(sequence):
+                    sequence = mutant
+                for i, ms in enumerate(mutant):
+                    if ms != sequence[i] and len(pos) < 1:
+                        pos.append(i)
+                        if label == 'WT':
+                            label = '%s%s%s' % (sequence[i], i + construct.offset + 1, mutant[i])
+            if pos == []:
+                mutant = sequence
+                wt_idx = idx
+            mutpos.append(pos)
+        else:
+            if 'sequence' in d.annotations:
+                mutant = d.annotations['sequence'][0]
+                pos = []
+                if not valid(sequence):
+                    sequence = mutant
+                for i, ms in enumerate(mutant):
+                    if ms != sequence[i] and len(pos) < 1:
+                        pos.append(i)
+            else:
+                pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
+                mutant = sequence[:pos[0]] + label[-1] + sequence[pos[0]+1:]
+            mutpos.append(pos)
+        if mutant in mutants and args.nomutrepeat:
+            continue
+        mut_labels.append(label)
+        mutants.append(mutant)
+        if not args.boxnormalize:
+            nd_tmp = normalize([d.values[seqpos.index(i)] for i in sorted_seqpos])
+            nd = [d.values[seqpos.index(i)] if d.values[seqpos.index(i)] >= 0 else 0.001 for i in sorted_seqpos]
+            #nd = [nd[i] if nd[i] < 4 else max(nd_tmp) for i in range(len(nd))]
+            #nd = [d.values[seqpos.index(i)] for i in sorted_seqpos]
+        else:
+            nd = normalize([d.values[seqpos.index(i)] for i in sorted_seqpos])
+        if args.clipzeros:
+            nd_last_sepos = len(seqpos)
+            for i in xrange(len(nd)-1, -1, -1):
+                if nd[i] != 0:
+                    break
+                nd_last_seqpos = i
+            last_seqpos = max(nd_last_seqpos, last_seqpos)
+        data.append(nd)
 if args.clipzeros:
     sorted_seqpos = sorted_seqpos[:last_seqpos]
     data = array(data)[:,:last_seqpos]
@@ -448,6 +459,17 @@ if args.titrate != None:
 #    energies = get_free_energy_matrix(structures,[m for m in  mutants], algorithm=args.priorweights)
 if args.modelselect == None or args.modelselect == 'heuristic':
     energies = get_free_energy_matrix(structures, mutants, algorithm=args.priorweights)
+if args.medoidfile:
+    struct_medoids = [s.strip() for s in args.medoidfile]
+    struct_medoid_indices = [-1]*len(struct_medoids)
+    for sm in struct_medoids:
+        if sm not in structures:
+            structures.append(sm)
+    for i, sm in enumerate(struct_medoids):
+        for j, s in enumerate(structures):
+            if s == sm:
+                struct_medoid_indices[i] = j
+            
 fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs)
 if args.decompose:
     fa.perform_motif_decomposition()
@@ -585,7 +607,23 @@ if args.crossvalidate > 0:
     exit()
 
 
-medoid_dict, assignments = cluster_structures(fa.struct_types, structures=structures)
+if args.medoidfile:
+    struct_medoids = [s.strip() for s in args.medoidfile]
+    medoid_dict = {}
+    assignments = defaultdict(list)
+    for i, s in enumerate(structures):
+        mindist = inf
+        for j in struct_medoid_indices:
+            dist = map_analysis_utils._mutinf([s[i] for s in fa.struct_types], [s[j] for s in fa.struct_types])
+            if dist < mindist:
+                mindist = dist
+                clust_idx = j
+        assignments[clust_idx].append(i)
+    for j in struct_medoid_indices:
+        medoid_dict[j] = j
+
+else:
+    medoid_dict, assignments = cluster_structures(fa.struct_types, structures=structures)
 
 
 if args.preparebootstrap:
@@ -759,7 +797,15 @@ else:
     r = range(data_cutoff.shape[1])
 
     # Structure cluster landscape plot for wild type
-    PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:], names=[ '%s_%s' % (rdatname.upper(), m) for m in maxmedoids])
+    if args.nostructlabels:
+        struct_labels = None
+    else:
+        struct_labels = [ '%s_%s' % (rdatname.upper(), m) for m in maxmedoids]
+        if args.structlabelfile:
+            for line in args.structlabelfile.readlines():
+                label, s = line.strip().split('\t')
+                struct_labels[[structures[m] for m in maxmedoids].index(s)] = label
+    PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:], names=struct_labels)
     savefig('%s/pca_landscape_plot_WT.png' % prefix, dpi=args.dpi)
 
     for i in arange(0, data_cutoff.shape[0], args.splitplots):
@@ -946,6 +992,9 @@ if args.compilebootstrap:
     Wcompile_std = Wcompile.std(axis=2)
     Wcompile_mean = Wcompile.mean(axis=2)
 
+    pickle.dump(Wcompile, open('%sW_bootstrap.pickle' % args.outprefix, 'w'))
+
+
     if len(structures) > MAX_STRUCTURES_PLOT:
         base_annotations = []
         helix_fractions = []
@@ -959,9 +1008,9 @@ if args.compilebootstrap:
                     bp_fractions_str = {}
                     bp_weights_str = {}
                     for bp in bp_fractions:
-                        bp_fractions_str[bp] = '%3.2f%%' % bp_fractions[bp]
+                        bp_fractions_str[bp] = ('%3.2f' % bp_fractions[bp]).rstrip('0').rstrip('.') + '%'
                     for bp in bp_weights:
-                        bp_weights_str[bp] = '%3.2f%% +/- %3.2f' % (bp_weights[bp], sqrt(bp_weights_std[bp]))
+                        bp_weights_str[bp] = ('%3.2f' % bp_weights[bp]).rstrip('0').rstrip('.') + '% +/-' + ('%3.2f' % sqrt(bp_weights_std[bp])).rstrip('0').rstrip('.')
                     base_annotations.append(bp_weights_str)
                     helix_fractions.append(bp_fractions_str)
         def helix_function(x,y):
@@ -978,17 +1027,11 @@ if args.compilebootstrap:
     fa.analyze(max_iterations=1, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, hard_em=args.hardem, W0=Wcompile_mean)
 
     _, data_pred_boot, sigma_pred_boot = fa.correct_scale(stype=args.scalemethod)
-
-    for i in arange(0, data_cutoff.shape[0], args.splitplots):
-        if i == 0 and args.splitplots == data_cutoff.shape[0]:
-            isuffix = ''
-        else:
-            isuffix = '_%s' % (i/args.splitplots)
-
-        figure(1)
-        clf()
-        plot_mutxpos_image(data_pred_boot[i:i+args.splitplots], sequence, seqpos_cutoff, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)], vmax=data_cutoff[i:i+args.splitplots,:].mean())
-        savefig('%s/bootstrap_reeffit_data_pred%s.png' % (args.outprefix, isuffix), dpi=args.dpi)
+    stats_boot = {}
+    pickle.dump(data_pred_boot, open('%sdata_pred_bootstrap.pickle' % args.outprefix, 'w'))
+    pickle.dump(sigma_pred_boot, open('%ssigma_pred_bootstrap.pickle' % args.outprefix, 'w'))
+    stats_boot['chi_sq_df'], stats_boot['rmsea'], stats_boot['aic'] = fa.calculate_fit_statistics(data_pred=data_pred_boot, sigma_pred=sigma_pred_boot)
+    pickle.dump(stats_boot, open('%sstatistics_bootstrap.pickle' % args.outprefix, 'w'))
 
 
     E_dcompile_std = fa.sigma_d
@@ -1022,31 +1065,57 @@ if args.compilebootstrap:
         savefig('%s/bootstrap_exp_react_struct_%s.png' % (args.outprefix, s), dpi=args.dpi)
 
     overall_wt_fractions_file = open('%s/bootstrap_overall_wt_fractions.txt' % (args.outprefix), 'w')
-    figure(3)
-    clf()
-    ax = subplot(111)
+
+    # Plot weights and data pred
+    for i in arange(0, data_cutoff.shape[0], args.splitplots):
+        if i == 0 and args.splitplots == data_cutoff.shape[0]:
+            isuffix = ''
+        else:
+            isuffix = '_%s' % (i/args.splitplots)
+        
+        # Plot bootstrap data pred
+        figure(1)
+        clf()
+        plot_mutxpos_image(data_pred_boot[i:i+args.splitplots], sequence, seqpos_cutoff, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)], vmax=data_cutoff[i:i+args.splitplots,:].mean())
+        savefig('%s/bootstrap_reeffit_data_pred%s.png' % (args.outprefix, isuffix), dpi=args.dpi)
+
+        # Plot bootstrap weights
+        figure(3)
+        clf()
+        ax = subplot(111)
+        if len(structures) > MAX_STRUCTURES_PLOT:
+            weights_by_mutant_plot(Wcompile_mean[i:i+args.splitplots,:], Wcompile_std[i:i+args.splitplots,:]/bootfactor,[mut_labels[k] for k in xrange(i, i+args.splitplots)], W_samples=Wcompile[i:i+args.splitplots,:,:], assignments=assignments, medoids=maxmedoids)
+            savefig('%s/bootstrap_weights_by_mutant%s.png' % (args.outprefix, isuffix), dpi=args.dpi)
+            for j in maxmedoids:
+                figure(3)
+                clf()
+                weights_by_mutant_plot(Wcompile_mean[i:i+args.splitplots,:], Wcompile_std[i:i+args.splitplots,:]/bootfactor,[mut_labels[k] for k in xrange(i, i+args.splitplots)], W_samples=Wcompile[i:i+args.splitplots,:,:], W_ref=W_0[i:i+args.splitplots,:], idx=j, assignments=assignments, medoids=maxmedoids)
+                savefig('%s/bootstrap_weights_by_mutant_structure_%s%s.png' % (args.outprefix, j, isuffix), dpi=100)
+                for structs in assignments.values():
+                    if j in structs:
+                        overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, Wcompile_mean[wt_idx, structs].sum(), Wcompile[:,structs,:].sum(axis=1).std(axis=1)[0]))
+
+        else:
+            weights_by_mutant_plot(Wcompile_mean[i:i+args.splitplots,:], Wcompile_std[i:i+args.splitplots,:]/bootfactor,[mut_labels[k] for k in xrange(i, i+args.splitplots)])
+            savefig('%s/bootstrap_weights_by_mutant%s.png' % (args.outprefix, isuffix), dpi=args.dpi)
+            for j in selected_structures:
+                figure(3)
+                clf()
+                weights_by_mutant_plot(Wcompile_mean[i:i+args.splitplots,:], Wcompile_std[i:i+args.splitplots,:]/bootfactor, [mut_labels[k] for k in xrange(i, i+args.splitplots)], W_ref=W_0[i:i+args.splitplots,:], idx=j)
+                savefig('%s/bootstrap_weights_by_mutant_structure_%s%s.png' % (args.outprefix, j, isuffix), dpi=100)
+
     if len(structures) > MAX_STRUCTURES_PLOT:
-        weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, assignments=assignments, medoids=maxmedoids)
-        savefig('%s/bootstrap_weights_by_mutant.png' % (args.outprefix), dpi=args.dpi)
         for j in maxmedoids:
-            figure(3)
-            clf()
-            weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_samples=Wcompile, W_ref=W_0, idx=j, assignments=assignments, medoids=maxmedoids)
-            savefig('%s/bootstrap_weights_by_mutant_structure_%s.png' % (args.outprefix, j), dpi=100)
             for structs in assignments.values():
                 if j in structs:
-                    overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, Wcompile_mean[wt_idx, structs].sum(), sqrt((Wcompile_std[wt_idx, structs]**2).sum())))
+                    overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, Wcompile_mean[wt_idx, structs].sum(), Wcompile[:,structs,:].sum(axis=1).std(axis=1)[0]))
 
     else:
-        weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels)
-        savefig('%s/bootstrap_weights_by_mutant.png' % (args.outprefix), dpi=args.dpi)
         for j in selected_structures:
-            figure(3)
-            clf()
-            weights_by_mutant_plot(Wcompile_mean, Wcompile_std/bootfactor, mut_labels, W_ref=W_0, idx_offset=j)
-            savefig('%s/bootstrap_weights_by_mutant_structure_%s.png' % (args.outprefix, j), dpi=100)
             overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, Wcompile_mean[wt_idx, j], Wcompile_std[wt_idx, j]))
 
+    PCA_structure_plot(structures, assignments, maxmedoids, weights=Wcompile_mean[wt_idx,:], names=struct_labels)
+    savefig('%s/bootstrap_pca_landscape_plot_WT.png' % prefix, dpi=args.dpi)
 
 
 

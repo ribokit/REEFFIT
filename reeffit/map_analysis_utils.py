@@ -81,7 +81,8 @@ def cluster_structures(struct_types, structures=[], distance='mutinf', expected_
     Z = hcluster.linkage(squareform(D), method='complete')
     prevnumclusts = nstructs
     maxCH =-inf
-    assignments = [(ns, ns) for ns in xrange(nstructs)]
+    assignments = dict([(ns, [ns]) for ns in xrange(nstructs)])
+    maxmedoids = dict([(ns, ns) for ns in xrange(nstructs)])
     for t in arange(0, D.max(), D.max()/10.):
         flatclusters = hcluster.fcluster(Z,t, criterion='distance')
         clusters = defaultdict(list)

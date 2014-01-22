@@ -12,7 +12,6 @@
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
 <text x="0" y="0" font-size="35" fill="rgb(100%, 0%, 0%)" font-family="Garamond">Helix fraction in cluster</text>
-<text x="0" y="40" font-size="35" fill="rgb(0%, 0%, 100%)" font-family="Garamond">Bootstrapped helix fraction</text>
 <g transform="translate(0,40)">
 {structure_grid}
 <g

@@ -71,9 +71,6 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
                 print sqrt(_W_err[0,:])
                 """
                 _W_err[:,i] = W_samples[:,si,:].sum(axis=1).std(axis=1)
-                print W_samples[:,si,:].sum(axis=1)
-                print _W_err[0,:]
-                pdb.set_trace()
             else:
                 _W_err[:,i] = (W_err[:,si]**2).sum(axis=1)
             #_W_err[:,i] = sqrt(_W_err[:,i])

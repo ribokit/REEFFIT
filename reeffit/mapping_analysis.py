@@ -896,14 +896,16 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
         return self.data_pred, self.sigma_pred
 
-    def calculate_fit_statistics(self):
-        data_pred, sigma_pred = self.calculate_data_pred()
+    def calculate_fit_statistics(self, data_pred=None, sigma_pred=None):
+        if data_pred == None or sigma_pred == None:
+            data_pred, sigma_pred = self.calculate_data_pred()
         chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
-        df = self.data.size - self.W.size - self.E_c[logical_not(isnan(self.E_c))].size - self.data.shape[1] - 1
+        df = self.data.size - self.data.shape[1] - 1
         if self.use_motif_decomposition:
-            df += -sum(self.nmotpos) 
+            df += -2*sum(self.nmotpos)
         else:
-            df += -self.E_d.size   
+            df += -self.E_d.size - self.W.size
+            df += - self.E_c[logical_not(isnan(self.E_c))].size
         k = -df - self.data.size + 1
         rmsea = sqrt(max((chi_sq/df - 1)/(self.data.shape[1] - 1), 0.0))
         aic = asscalar(chi_sq + 2*k - self.data.shape[0]*self.logpriors)

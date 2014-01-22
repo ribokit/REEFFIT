@@ -156,7 +156,7 @@ for fname in os.listdir(result_dir):
 data_dict = {}
 data_dict['structure_grid'], grid_xoffset, grid_yoffset = generate_structure_grid(structure_files, titles, fractions, fractions_std)
 data_dict['pca_img'] = os.path.abspath(result_dir + 'pca_landscape_plot_WT.png')
-data_dict['pca_x'] = grid_xoffset + 50
+data_dict['pca_x'] = grid_xoffset + 200
 data_dict['pca_y'] = 25
 data_dict['pca_height'] = 1200
 data_dict['pca_width'] = 1600

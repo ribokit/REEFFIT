@@ -508,3 +508,20 @@ def get_minimal_overlapping_motif_decomposition(structures, bytype=False):
                     motif.append(j)
             idx = j
     """
+
+def bpp_matrix_from_structures(structures, weights, weight_err=None):
+    npos = len(structures[0])
+    bppm = zeros([npos, npos])
+    if weight_err != None:
+        bppm_err = zeros([npos, npos])
+    for i, s in enumerate(structures):
+        for n1, n2 in rdatkit.secondary_structure.SecondaryStructure(dbn=s).base_pairs():
+            bppm[n1,n2] += weights[i]
+            if weight_err != None:
+                bppm_err[n1,n2] += weight_err[i]**2
+    if weight_err != None:
+        return bppm, sqrt(bppm_err)
+    else:
+        return bppm
+
+

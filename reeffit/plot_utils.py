@@ -1,6 +1,8 @@
 from matplotlib.pylab import *
 import matplotlib.pylab as pl
+import matplotlib
 from matplotlib.patches import Rectangle
+import map_analysis_utils as utils
 import pdb
 
 STRUCTURE_COLORS = [get_cmap('Paired')(i*50) for i in xrange(100)]
@@ -146,3 +148,33 @@ def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, we
             if '_' in names[i]:
                 names[i] = names[i].replace('_', '_{') + '}'
             text(select_struct_coordinates[i,0], select_struct_coordinates[i,1], '$' + names[i] + '$', style='italic')
+
+def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offset=0):
+    if weight_err != None:
+        bppm, bppm_err = utils.bpp_matrix_from_structures(structures, weights, weight_err=weight_err)
+        for i in xrange(bppm.shape[0]):
+            for j in xrange(bppm.shape[1]):
+                if bppm[i,j] != 0 and bppm_err[i,j] != 0 and (bppm[i,j]/bppm_err[i,j] < 20):
+                    bppm[i,j] = 0
+    else:
+        bppm = utils.bpp_matrix_from_structures(structures, weights)
+
+    if ref_weights != None:
+        bppm_ref = utils.bpp_matrix_from_structures(structures, ref_weights)
+        for i in xrange(bppm_ref.shape[0]):
+            for j in xrange(i+1, bppm_ref.shape[1]):
+                bppm[i,j] = bppm_ref[j,i]
+
+    r = arange(0, bppm.shape[0], 10)
+    r_offset = int(offset/10) * 10 + 10 - offset - 1
+    r = array([0] + (r + r_offset).tolist())
+
+    #colors = [('white')] + [(cm.jet(i)) for i in xrange(1, 256)]
+    #bppm_map = matplotlib.colors.LinearSegmentedColormap.from_list('bppm_map', colors)
+    #bppm[bppm <= 0.05] = 0
+    imshow(bppm, cmap=get_cmap('jet'), interpolation='nearest', vmax=1)
+    grid()
+    colorbar()
+    xticks(r, r + offset + 1, rotation=90)
+    yticks(r, r + offset + 1)
+

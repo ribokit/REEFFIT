@@ -105,7 +105,7 @@ def structure_likelihood(struct_types, idx, data_energies, data_struct_types, st
 
 # MappingAnalysisMethod class for mapping analysis
 class MappingAnalysisMethod():
-    def __init__(self, data, structures, sequences, energies, wt_index, mutpos, c_size, seqpos_range):
+    def __init__(self, data, structures, sequences, energies, wt_indices, mutpos, c_size, seqpos_range):
         self.seqpos_range = seqpos_range
         if self.seqpos_range:
             self.data = matrix(data)[:,self.seqpos_range[0]:self.seqpos_range[1]]
@@ -115,8 +115,8 @@ class MappingAnalysisMethod():
             self.data = matrix(data)
             self._origdata = self.data
             self.sequences = sequences
-        self.wt = self.sequences[wt_index]
-        self.wt_index = wt_index
+        self.wt = self.sequences[wt_indices[0]]
+        self.wt_indices = wt_indices
         self.energies = energies
         self.mutpos = mutpos
         self.c_size = c_size
@@ -193,8 +193,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
     FACTOR_ESTIMATION_METHODS = ['fanalysis', 'hclust']
     MODEL_SELECT_METHODS = ['heuristic', 'bruteforce']
-    def __init__(self, data, structures, sequences, wt_index=0, mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None, lam_reacts=0, lam_weights=0, njobs=None):
-        MappingAnalysisMethod.__init__(self, data, structures, sequences, energies, wt_index, mutpos, c_size, seqpos_range)
+    def __init__(self, data, structures, sequences, wt_indices=[0], mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None, lam_reacts=0, lam_weights=0, lam_mut=0, njobs=None):
+        MappingAnalysisMethod.__init__(self, data, structures, sequences, energies, wt_indices, mutpos, c_size, seqpos_range)
         self.njobs = njobs
         self.concentrations = concentrations
         self.kds = kds
@@ -204,6 +204,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         self.bp_dist /= float(len(self._origstructures[0]))
         self.lam_reacts = lam_reacts
         self.lam_weights = lam_weights
+        self.lam_mut = lam_weights
         self.use_motif_decomposition = False
 
     def perform_motif_decomposition(self):
@@ -350,11 +351,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             data_red = self.data[chosenindices.keys(),:]
             nmeas = data_red.shape[0]
             print 'Scoring structures for wild type -- for prior swapping'
-            struct_scores = [-struct_data_energies[idx][self.wt_index] for idx in all_struct_indices]
+            struct_scores = [-struct_data_energies[idx][self.wt_indices[0]] for idx in all_struct_indices]
 
             #struct_scores = [array(structure_likelihood(self.struct_types, idx, data_energies, data_struct_types, struct_data_probs)).max() for idx in all_struct_indices]
             #struct_scores = [struct_data_probs[idx,:].max() for idx in all_struct_indices]
-            struct_scores = [struct_data_probs[idx,self.wt_index] for idx in all_struct_indices]
+            struct_scores = [struct_data_probs[idx,self.wt_indices[0]] for idx in all_struct_indices]
             sorted_structs = sorted(range(len(struct_scores)), key=lambda x:struct_scores[x], reverse=True)
             sorted_dbns = [self.structures[s] for s in sorted_structs]
 
@@ -526,7 +527,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         contact_prior_factor = 1/1.5
         prior_factors = {}
         prior_factors['u'] = 0.5
-        prior_factors['p'] = 10.
+        prior_factors['p'] = 7.5
         nmeas = W.shape[0]
         nstructs = len(struct_types[0])
         contact_idx_dict = {}
@@ -604,6 +605,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         else:
                             A[p,s] = W[j,s]*W[j,s2]
             for s in xrange(nstruct_elems):
+                for m in motifidx(s):
+                    if struct_types[idx][m] != struct_types[idx][motifidx(s)[0]]:
+                        raise ValueError('MOTIF DECOMPOSITION FAILED! STRUCTURES IN POSITION %s HAVE DIFFERENT STATES!!! %s' % (idx))
                 if self.use_motif_decomposition:
                     b[s] = -prior_factors[struct_types[idx][motifidx(s)[0]]]/Psi_inv[0,0]
                     for j in xrange(nmeas):
@@ -1018,17 +1022,24 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             args, _, _, argvals = inspect.getargvalues(frame)
             def par_fun(j, *args):
                 E_d_proj = mat(zeros([nstructs,1]))
-                E_d_proj = 0
                 E_ddT_Psi_inv = zeros(E_ddT[:,:,0].shape)
                 E_d_c_j = self._E_d_c_j(E_d, E_c, j, contact_sites)
+                E_ddT_Psi_inv += 0.01*eye(W.shape[1])
                 for i in xrange(E_d_c_j.shape[1]):
                     #E_d_proj += data[j,i]*E_d[:,i]
                     E_d_proj += -Psi_inv[i,j,j]*data[j,i]*E_d_c_j[:,i]
                     E_ddT_Psi_inv += Psi_inv[i,j,j]*E_ddT[:,:,i]
 
                 if self.lam_weights != 0:
-                    E_ddT_Psi_inv += 2*self.lam_weights*diag(1/(W_initvals[j,:]**2))
-                    E_d_proj += 2*self.lam_weights*mat(1./W_initvals[j,:]).T
+                    E_ddT_Psi_inv += self.lam_weights*diag(1/(W_initvals[j,:]**2))
+                    E_d_proj += self.lam_weights*mat(1./W_initvals[j,:]).T
+
+                if self.lam_mut != 0 and j in self.wt_indices:
+                    E_ddT_Psi_inv += self.lam_mut*eye(W.shape[1])
+                    for m in xrange(W.shape[0]):
+                        if m not in self.wt_indices:
+                            E_d_proj += -2*self.lam_mut*mat(-W[m,:] - (W_initvals[j,:] - W_initvals[m,:])).T
+
                 'Solving weights for measurement %s' % j
                 #P = cvxmat(E_ddT_Psi_inv - (2*eye(nstructs) - ones([nstructs, nstructs])))
                 P = cvxmat(E_ddT_Psi_inv)
@@ -1041,9 +1052,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     return asscalar(0.5*dot(x.T, dot(E_ddT_Psi_inv, x)) + dot(E_d_proj.T,x))
                 def quadfunprime(x):
                     return 0.5*asarray(dot(E_ddT_Psi_inv, x) + asarray(E_d_proj).ravel())
-                bounds = [(1e-10, 1)]*nstructs
+                bounds = [(1e-10, None)]*nstructs
                 #sol = optimize.fmin_l_bfgs_b(quadfun, W_initvals[j,:], fprime=quadfunprime, bounds=bounds)[0]
-                sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[j,:])})['x'])
+                sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(0.5, (nstructs, 1))})['x'])
                 #sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
                 
                 sol[sol <= 0] = 1e-10
@@ -1291,7 +1302,6 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         Psi_reinits = []
         adaptive_factor = 1
 
-
         t = 0
         for i in xrange(npos):
             data_dataT[:,:,i] = dot(data[:,i], data[:,i].T)
@@ -1470,7 +1480,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             if base_loglike is None and max_iterations != 1:
                 base_loglike = loglike
             else:
-                if True or loglike > max_loglike or max_iterations == 1:
+                if True and loglike > max_loglike or max_iterations == 1:
                     max_loglike = loglike
                     self.logpriors = logpriors
                     W_opt = W.copy()

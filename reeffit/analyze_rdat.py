@@ -73,6 +73,7 @@ parser.add_argument('--postmodel', default=False, action='store_true', help='Per
 parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help='File with the dissociation constants for each structure, for titrating a chemical specified in the titrate option')
 parser.add_argument('--lamreacts', default=0, type=float, help='Regularization parameter controlling the similarity between reactivities of similar structures. Higher values will force similar reactivities between structures, depending on their base pair distance.')
 parser.add_argument('--lamweights', default=0, type=float, help='Regularization parameter controlling how far from the initial weight estimates (e.g. from RNAstructure or ViennaRNA). Higher values will force weights to be closer to initial estimates')
+parser.add_argument('--lammut', default=1., type=float, help='Regularization parameter controlling similarities of delta delta Gs of weights of wild type and mutants to the ones calculated by the secondary structure algorithm (e.g. RNAstructure or ViennaRNA). Higher values will force delta delta G values between wild type and mutant structures to be similar.')
 parser.add_argument('--lamfile', default=None, type=argparse.FileType('r'), help='File with results of a cross-validation run. Format is lines with cross_validation_error, lam_reacts, lam_weights; tab-delimited. Values with lowest cross_validation_error will be taken for values of lam_reacts and lam_weights.')
 parser.add_argument('--decompose', action='store_true', default=False, help='Decompose structures into a set of overlapping motifs to reduce number of variables to fit.')
 parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits')
@@ -126,7 +127,10 @@ def carry_on_option_string():
                     options += ' --%s ' % opt
             elif type(val) == list:
                 if len(val) > 0:
-                    options += ' --%s %s' % (opt, ' '.join(val))
+                    if opt == 'addrdatfiles':
+                        options += ' --%s %s' % (opt, ' '.join([os.path.abspath(x.name) for x in val]))
+                    else:
+                        options += ' --%s %s' % (opt, ' '.join([str(x) for x in val]))
             else:
                 options += ' --%s=%s ' % (opt, val)
     return options
@@ -161,7 +165,7 @@ def prepare_cv_worker_file(idx, all_parameters):
 def prepare_bootstrap_worker_file(idx, all_indices, idxoffset):
     wf = open('%sbootstrap_worker%s.sh' % (args.outprefix, idx), 'w')
     for i in xrange(len(all_indices)):
-        general_options = '%s %s/boot%s/ --structfile %s --lamweights=%s --lamreacts=%s --worker' % (os.path.abspath(args.rdatfile.name), args.outprefix, i + idxoffset, os.path.abspath(args.structfile.name), args.lamweights, args.lamreacts)
+        general_options = '%s %s/boot%s/ --structfile %s --lamweights=%s --lamreacts=%s --lammut=%s --worker' % (os.path.abspath(args.rdatfile.name), args.outprefix, i + idxoffset, os.path.abspath(args.structfile.name), args.lamweights, args.lamreacts, args.lammut)
         general_options += carry_on_option_string()
         wf.write('%s %s %s --seqindices="%s"\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options, ','.join([str(x) for x in all_indices[i]])))
     return wf.name
@@ -175,7 +179,7 @@ def write_worker_master_script(workerfiles, wtype):
     general_options += carry_on_option_string()
     mwf.write('elif [ "$1" = "compile" ]\nthen\n')
     if wtype == 'bootstrap':
-        general_options += ' --lamweights=%s --lamreacts=%s ' % (args.lamweights, args.lamreacts)
+        general_options += ' --lamweights=%s --lamreacts=%s --lammut=%s' % (args.lamweights, args.lamreacts, args.lammut)
         general_options += ' --compilebootstrap '
         mwf.write('\t%s %s %s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options))
     if wtype == 'cv':
@@ -206,7 +210,9 @@ carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
 MAX_STRUCTURES_PLOT = 10
 rdatname = args.rdatfile.name[args.rdatfile.name.rfind('/')+1:].split('_')[0]
 
-for rdatfile in [args.rdatfile] + args.addrdatfiles:
+idxoffset = 0
+nwarnings = 0
+for rdatidx, rdatfile in enumerate([args.rdatfile] + args.addrdatfiles):
 
     print 'Parsing RDAT %s' % rdatfile.name
     rdat = RDATFile()
@@ -214,26 +220,29 @@ for rdatfile in [args.rdatfile] + args.addrdatfiles:
     construct = rdat.constructs.values()[0]
 
     seqpos = construct.seqpos
-    sorted_seqpos = sorted(seqpos)
     offset = construct.offset
     sequence = construct.sequence[min(seqpos) - offset - 1:max(seqpos) - offset].upper()
-    sequence = construct.sequence.upper()
+    if rdatidx == 0:
+        sequence = construct.sequence.upper()
+        sorted_seqpos = sorted(seqpos)
+        data = []
+        mut_labels = []
+        mutants = []
+        mutpos = []
+        wt_idx = -1
+        wt_indices = []
+        use_struct_clusters = False
+        concentrations = []
+        kds = []
+        last_seqpos = 0
+
 
 
     print 'Parsing mutants and data'
-    data = []
-
-    mut_labels = []
-    mutants = []
-    mutpos = []
-    wt_idx = 0
-    use_struct_clusters = False
-    concentrations = []
-    kds = []
-    last_seqpos = 0
 
     for idx, d in enumerate(construct.data):
         if 'warning' in d.annotations:
+            nwarnings += 1
             continue
         if args.titrate:
             if 'chemical' in d.annotations:
@@ -247,7 +256,7 @@ for rdatfile in [args.rdatfile] + args.addrdatfiles:
                 if not chemfound:
                     concentrations.append(0)
         if 'mutation' in d.annotations:
-            label = d.annotations['mutation'][0]
+            label = ';'.join(d.annotations['mutation'])
         else:
             label = 'WT'
         pos = []
@@ -264,8 +273,8 @@ for rdatfile in [args.rdatfile] + args.addrdatfiles:
                             label = '%s%s%s' % (sequence[i], i + construct.offset + 1, mutant[i])
             if pos == []:
                 mutant = sequence
-                wt_idx = idx
-            mutpos.append(pos)
+                wt_indices.append(idx + idxoffset - nwarnings)
+
         else:
             if 'sequence' in d.annotations:
                 mutant = d.annotations['sequence'][0]
@@ -276,9 +285,13 @@ for rdatfile in [args.rdatfile] + args.addrdatfiles:
                     if ms != sequence[i] and len(pos) < 1:
                         pos.append(i)
             else:
-                pos = [int(label[1:len(label)-1]) - 1 - construct.offset]
-                mutant = sequence[:pos[0]] + label[-1] + sequence[pos[0]+1:]
-            mutpos.append(pos)
+                mutant = sequence
+                pos = []
+                for mutation in d.annotations['mutation']:
+                    if mutation != 'WT':
+                        pos.append(int(mutation[1:len(mutation)-1]) - 1 - construct.offset)
+                        mutant = mutant[:pos[0]] + mutation[-1] + mutant[pos[0]+1:]
+        mutpos.append(pos)
         if mutant in mutants and args.nomutrepeat:
             continue
         mut_labels.append(label)
@@ -298,6 +311,9 @@ for rdatfile in [args.rdatfile] + args.addrdatfiles:
                 nd_last_seqpos = i
             last_seqpos = max(nd_last_seqpos, last_seqpos)
         data.append(nd)
+    idxoffset += len(construct.data)
+
+wt_idx = wt_indices[0]
 if args.clipzeros:
     sorted_seqpos = sorted_seqpos[:last_seqpos]
     data = array(data)[:,:last_seqpos]
@@ -470,7 +486,7 @@ if args.medoidfile:
             if s == sm:
                 struct_medoid_indices[i] = j
             
-fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs)
+fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut)
 if args.decompose:
     fa.perform_motif_decomposition()
 unpaired_data, paired_data = fa.set_priors_by_rvs(SHAPE_unpaired_sample, SHAPE_paired_sample)
@@ -570,10 +586,10 @@ if args.crossvalidate > 0:
         cv_indices = [x for x in chain(*[fold_sets [i] for i in xrange(args.crossvalidate) if i != fold])]
         pred_indices = fold_sets[fold]
 
-        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, njobs=args.njobs)
+        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, njobs=args.njobs)
         lhood_traces, W_cv, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=cv_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
 
-        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, njobs=args.njobs)
+        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, njobs=args.njobs)
         lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W_cv, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=pred_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
 
         data_pred_cv, sigma_pred_cv = fa_cv.calculate_data_pred()
@@ -654,9 +670,9 @@ else:
 # prefix, short for args.outprefix for now on
 prefix = args.outprefix
 seqpos_iter = [seqpos_cutoff[i] for i in I]
-    
+
 # Perform the analysis
-    
+
 lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
 
 # Get the most frequent medoid per structure cluster
@@ -794,7 +810,7 @@ else:
     report.write('RMSEA: %s\n' % rmsea)
     report.write('AIC: %s\n' % aic)
     report.close()
-    r = range(data_cutoff.shape[1])
+    r = arange(data_cutoff.shape[1])
 
     # Structure cluster landscape plot for wild type
     if args.nostructlabels:
@@ -807,6 +823,13 @@ else:
                 struct_labels[[structures[m] for m in maxmedoids].index(s)] = label
     PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:], names=struct_labels)
     savefig('%s/pca_landscape_plot_WT.png' % prefix, dpi=args.dpi)
+
+    for widx in wt_indices:
+
+        figure(1)
+        clf()
+        bpp_matrix_plot(structures, W_fa[widx,:], ref_weights=W_0[widx,:], weight_err=W_fa_std[wt_idx,:], offset=offset)
+        savefig('%s/bppm_plot_WT%s.png' % (prefix, widx), dpi=args.dpi)
 
     for i in arange(0, data_cutoff.shape[0], args.splitplots):
         if i == 0 and args.splitplots == data_cutoff.shape[0]:
@@ -895,7 +918,7 @@ else:
                 expected_reactivity_plot(E_d_fa[s,:], fa.structures[s], yerr=sigma_d_fa[s,:], seq_indices=I)
             else:
                 expected_reactivity_plot(E_d_fa[s,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
-            xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
+            xticks(r[0:len(r):5] + 1, seqpos_iter[0:len(seqpos_iter):5], rotation=90)
             savefig('%s/exp_react_struct_%s.png' % (prefix, s), dpi=args.dpi)
 
             # Plot WT predicted vs real
@@ -932,7 +955,7 @@ else:
                     expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:], seq_indices=I)
                 else:
                     expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
-                xticks(r[0:len(r):5], seqpos_iter[0:len(seqpos_iter):5], rotation=90)
+                xticks(r[0:len(r):5] + 1, seqpos_iter[0:len(seqpos_iter):5], rotation=90)
                 savefig('%s/exp_react_struct_%s.png' % (prefix, i), dpi=args.dpi)
 
 
@@ -951,7 +974,7 @@ else:
             ylim(0, max(fa.paired_pdf(x)) + 0.5)
             savefig('%sprior_paired.png' % args.outprefix, dpi=args.dpi)
             # Plot all data vs predicted for each measurement
-            r = range(data_cutoff.shape[1])
+            r = arange(data_cutoff.shape[1])
             for i in xrange(data_cutoff.shape[0]):
                 f = figure(5)
                 f.set_size_inches(15, 5)
@@ -963,7 +986,7 @@ else:
                 ylim(0,4)
                 legend()
                 savefig('%s/data_vs_predicted_%s_%s.png' % (prefix, i, mut_labels[i]))
-
+exit()
 if args.compilebootstrap:
     print 'Compiling bootstrap results'
 
@@ -1054,14 +1077,14 @@ if args.compilebootstrap:
     legend()
     savefig('%s/bootstrap_data_vs_predicted_WT.png' % args.outprefix)
 
-    r = range(data_cutoff.shape[1])
+    r = arange(data_cutoff.shape[1])
     for s in maxmedoids:
         f = figure(2)
         f.set_size_inches(15, 5)
         clf()
         title('Structure %s: %s' % (s, structures[s]))
         expected_reactivity_plot(E_dcompile_mean[s,:], fa.structures[s], yerr=E_dcompile_std[s,:]/bootfactor)
-        xticks(r[0:len(r):5], seqpos_cutoff[0:len(seqpos_cutoff):5], rotation=90)
+        xticks(r[0:len(r):5] + 1, seqpos_cutoff[0:len(seqpos_cutoff):5], rotation=90)
         savefig('%s/bootstrap_exp_react_struct_%s.png' % (args.outprefix, s), dpi=args.dpi)
 
     overall_wt_fractions_file = open('%s/bootstrap_overall_wt_fractions.txt' % (args.outprefix), 'w')
@@ -1117,6 +1140,10 @@ if args.compilebootstrap:
     PCA_structure_plot(structures, assignments, maxmedoids, weights=Wcompile_mean[wt_idx,:], names=struct_labels)
     savefig('%s/bootstrap_pca_landscape_plot_WT.png' % prefix, dpi=args.dpi)
 
+    figure(1)
+    clf()
+    bpp_matrix_plot(structures, Wcompile_mean[wt_idx,:], ref_weights=W_0[wt_idx,:], weight_err=Wcompile_std[wt_idx,:], offset=offset)
+    savefig('%s/bootstrap_bppm_plot_WT.png' % prefix, dpi=args.dpi)
 
 
     print 'Printing bootstrap report'

@@ -193,7 +193,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
     FACTOR_ESTIMATION_METHODS = ['fanalysis', 'hclust']
     MODEL_SELECT_METHODS = ['heuristic', 'bruteforce']
-    def __init__(self, data, structures, sequences, wt_indices=[0], mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None, lam_reacts=0, lam_weights=0, lam_mut=0, njobs=None):
+    def __init__(self, data, structures, sequences, wt_indices=[0], mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None, lam_reacts=0, lam_weights=0, lam_mut=0, lam_ridge=0.01, njobs=None):
         MappingAnalysisMethod.__init__(self, data, structures, sequences, energies, wt_indices, mutpos, c_size, seqpos_range)
         self.njobs = njobs
         self.concentrations = concentrations
@@ -202,14 +202,21 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         self.paired_pdf = SHAPE_paired_pdf
         self.bp_dist = utils.get_structure_distance_matrix(self._origstructures, self._origstruct_types, distance='basepair')
         self.bp_dist /= float(len(self._origstructures[0]))
+
         self.lam_reacts = lam_reacts
         self.lam_weights = lam_weights
-        self.lam_mut = lam_weights
+        self.lam_mut = lam_mut
+        self.lam_ridge = lam_ridge
+        
         self.use_motif_decomposition = False
 
     def perform_motif_decomposition(self):
         print 'Starting motif decomposition'
-        self.pos_motif_map, self.motif_ids, self.motif_dist = utils.get_minimal_overlapping_motif_decomposition(self._origstructures, bytype=True)
+        if self.seqpos_range != None:
+            offset = -self.seqpos_range[0]
+        else:
+            offset = 0
+        self.pos_motif_map, self.motif_ids, self.motif_dist = utils.get_minimal_overlapping_motif_decomposition(self._origstructures, bytype=True, offset=offset)
         self.nmotpos = []
         self.posmap = defaultdict(list)
         for i in xrange(self.data.shape[1]):
@@ -607,7 +614,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             for s in xrange(nstruct_elems):
                 for m in motifidx(s):
                     if struct_types[idx][m] != struct_types[idx][motifidx(s)[0]]:
-                        raise ValueError('MOTIF DECOMPOSITION FAILED! STRUCTURES IN POSITION %s HAVE DIFFERENT STATES!!! %s' % (idx))
+                        raise ValueError('MOTIF DECOMPOSITION FAILED! STRUCTURES IN POSITION %s HAVE DIFFERENT STATES!!! %s' % (idx, struct_types[idx]))
                 if self.use_motif_decomposition:
                     b[s] = -prior_factors[struct_types[idx][motifidx(s)[0]]]/Psi_inv[0,0]
                     for j in xrange(nmeas):
@@ -1024,7 +1031,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 E_d_proj = mat(zeros([nstructs,1]))
                 E_ddT_Psi_inv = zeros(E_ddT[:,:,0].shape)
                 E_d_c_j = self._E_d_c_j(E_d, E_c, j, contact_sites)
-                E_ddT_Psi_inv += 0.01*eye(W.shape[1])
+                E_ddT_Psi_inv += self.lam_ridge*eye(W.shape[1])
                 for i in xrange(E_d_c_j.shape[1]):
                     #E_d_proj += data[j,i]*E_d[:,i]
                     E_d_proj += -Psi_inv[i,j,j]*data[j,i]*E_d_c_j[:,i]

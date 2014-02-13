@@ -365,7 +365,7 @@ def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=No
     return contact_sites
 
 
-def get_minimal_overlapping_motif_decomposition(structures, bytype=False):
+def get_minimal_overlapping_motif_decomposition(structures, bytype=False, offset=0):
     if type(structures[0]) == str:
         struct_objs = [rdatkit.secondary_structure.SecondaryStructure(dbn=s) for s in structures]
     else:
@@ -374,11 +374,11 @@ def get_minimal_overlapping_motif_decomposition(structures, bytype=False):
     def get_motif_id(k, ntlist, pos):
         if bytype:
             return '%s_%s' % (k, pos)
-        return '%s_%s' % (k, '-'.join([str(x) for x in ntlist]))
+        return '%s_%s' % (k, ';'.join([str(x) for x in ntlist]))
 
     def get_type_and_ntlist(id):
         typ, ntliststr = id.split('_')
-        return typ, [int(x) for x in ntliststr.split('-')]
+        return typ, [int(x) for x in ntliststr.split(';')]
 
     pos_motif_map = {}
 
@@ -414,15 +414,15 @@ def get_minimal_overlapping_motif_decomposition(structures, bytype=False):
             for ntlist in v:
                 for pos in ntlist:
                     try:
-                        m_idx = motif_ids.index(get_motif_id(k, ntlist, pos))
-                        if (pos,m_idx) not in pos_motif_map:
-                            pos_motif_map[(pos,m_idx)] = [i]
+                        m_idx = motif_ids.index(get_motif_id(k, ntlist, pos+offset))
+                        if (pos+offset,m_idx) not in pos_motif_map:
+                            pos_motif_map[(pos+offset,m_idx)] = [i]
                         else:
-                            if i not in pos_motif_map[(pos,m_idx)]:
-                                pos_motif_map[(pos,m_idx)].append(i)
+                            if i not in pos_motif_map[(pos+offset,m_idx)]:
+                                pos_motif_map[(pos+offset,m_idx)].append(i)
                     except ValueError:
-                        motif_ids.append(get_motif_id(k, ntlist, pos))
-                        pos_motif_map[(pos,len(motif_ids)-1)] = [i]
+                        motif_ids.append(get_motif_id(k, ntlist, pos+offset))
+                        pos_motif_map[(pos+offset,len(motif_ids)-1)] = [i]
 
     motif_dist = zeros([len(motif_ids), len(motif_ids)])
     if bytype:

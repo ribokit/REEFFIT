@@ -154,7 +154,7 @@ def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offs
         bppm, bppm_err = utils.bpp_matrix_from_structures(structures, weights, weight_err=weight_err)
         for i in xrange(bppm.shape[0]):
             for j in xrange(bppm.shape[1]):
-                if bppm[i,j] != 0 and bppm_err[i,j] != 0 and (bppm[i,j]/bppm_err[i,j] < 20):
+                if bppm[i,j] != 0 and bppm_err[i,j] != 0 and (bppm[i,j]/bppm_err[i,j] < 1):
                     bppm[i,j] = 0
     else:
         bppm = utils.bpp_matrix_from_structures(structures, weights)
@@ -168,6 +168,7 @@ def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offs
     r = arange(0, bppm.shape[0], 10)
     r_offset = int(offset/10) * 10 + 10 - offset - 1
     r = array([0] + (r + r_offset).tolist())
+    r[-1] = min(bppm.shape[0]-1, r[-1])
 
     #colors = [('white')] + [(cm.jet(i)) for i in xrange(1, 256)]
     #bppm_map = matplotlib.colors.LinearSegmentedColormap.from_list('bppm_map', colors)

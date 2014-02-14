@@ -1,3 +1,19 @@
+#This file is part of the REEFFIT package.
+#    Copyright (C) 2013 Pablo Cordero <tsuname@stanford.edu>
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 import pdb
 from matplotlib.pylab import *
 from reactivity_distributions import *
@@ -10,11 +26,24 @@ import scipy.cluster.hierarchy as hcluster
 k = 0.0019872041
 T = 310.15 # temperature
 
-# Akaike information criterion (corrected form) for model selection
 def _AICc(lhood, nparams, ndata):
+    """Akaike information criterion (corrected form) for fit assessment and (in some cases) model selection."""
     return 2*nparams - 2*lhood + (2*nparams*(nparams + 1))/(ndata - nparams -1)
 
 def AICc(lhood, data, W, E_d, E_c, Psi):
+    """
+    Akaike information criterion for the REEFFIT factor mode.
+
+    Args:
+        lhood (float): The likelihood value from the model
+        data (numpy array): The chemical mapping data
+        W (numpy array): The structure weights
+        E_d (numpy array): The structure latent reactivities
+        E_c (numpy array): The structure latent contact matrices
+        Psi (numpy array): The sequence-dependent covariance matrices
+
+    Returns
+    """
     return _AICc(lhood, W.size + E_d.size + Psi.shape[0] + E_c[logical_not(isnan(E_c))].size, data.size)
 
 # Calculate mutual information between types
@@ -125,26 +154,6 @@ def cluster_structures(struct_types, structures=[], distance='mutinf', expected_
         print 'For %s threshold we have %s clusters with %s CH' % (t, numclusts, CH)
     print 'Done clustering structures, with %s clusters' % numclusts
     return maxmedoids, assignments
-
-# To perform a standard factor analysis, with normal priors
-# We use this mainly to have a first estimate of the number 
-# structures needed before performing the real factor analysis
-def standard_factor_analysis(data, nstructs):
-    fnode = mdp.nodes.FANode(output_dim=nstructs)
-    fnode.train(asarray(data.T))
-    weights = fnode.execute(data.T)
-    factors = fnode.A.T
-    data_pred = dot(weights, factors).T
-    return fnode.lhood[-1]*fnode.tlen, data_pred, weights, factors
-
-def factor_index(data, nstructs):
-    aics = [inf]*(nstructs+1)
-    for ns in range(2, nstructs+1):
-        lhood, data_pred, weights, factors = standard_factor_analysis(data, ns)
-        aics[ns] = _AICc(lhood, 1.5*size(factors), size(data))
-        print 'For %s structures, AICc is %s' % (ns, aics[ns])
-    return aics.index(min(aics))
-
 
 def normalize(bonuses):
     l = len(bonuses)

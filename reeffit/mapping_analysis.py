@@ -1,6 +1,20 @@
+#This file is part of the REEFFIT package.
+#    Copyright (C) 2013 Pablo Cordero <tsuname@stanford.edu>
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import pdb
 import inspect
-#import mdp
 import pymc
 import joblib
 import map_analysis_utils as utils
@@ -229,17 +243,6 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         print 'Number of motifs per position: %s' % self.nmotpos
         self.use_motif_decomposition = True
 
-    # To perform a standard factor analysis, with normal priors
-    # We use this mainly to have a first estimate of the number
-    # structures needed before performing the real factor analysis
-    def _standard_factor_analysis(self, nstructs):
-        fnode = mdp.nodes.FANode(output_dim=nstructs)
-        fnode.train(asarray(self.data.T))
-        weights = fnode.execute(self.data.T)
-        factors = fnode.A.T
-        data_pred = dot(weights, factors).T
-        return fnode.lhood[-1], data_pred, weights, factors
-
     def set_priors_by_rvs(self, unpaired_rvs, paired_rvs):
         unpaired_data = self.data[self.data > self.data.mean()].tolist()[0]
         paired_data = self.data[self.data <= self.data.mean()].tolist()[0]
@@ -292,15 +295,6 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         all_struct_indices = range(nstructs)
         if expected_structures <= 0:
             print 'No expected number of structures given'
-            if expstruct_estimation == 'fanalysis':
-                print 'Using standard factor analysis to estimate this'
-                aics = [inf]*(nstructs+1)
-                for ns in range(2, nstructs+1):
-                    lhood, data_pred, weights, factors = self._standard_factor_analysis(ns)
-                    aics[ns] = utils._AICc(lhood, size(weights), size(self.data))
-                    print 'For %s structures, AICc is %s' % (ns, aics[ns])
-                expected_structures = aics.index(min(aics))
-                print 'Estimated %s number of structures for model' % expected_structures
         if method == 'heuristic':
             if expstruct_estimation == 'fanalysis':
                 maxmedoids, assignments = utils.cluster_structures(self.struct_types, expected_medoids=expected_structures)

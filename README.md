@@ -14,6 +14,11 @@ To install:
 
 <code>export REEFFIT_HOME=/tsuname/your_name/src/reeffit</code>
 
+* Be sure to add REEFFIT_HOME/bin to your PATH.
+
 * Note that you should have rdatkit installed and properly set up as well (see https://github.com/hitrace/rdatkit)
+
+
+Please take a look at the documentation in http://reeffit.readthedocs.org
 
 

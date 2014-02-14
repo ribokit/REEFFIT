@@ -23,7 +23,8 @@
     <script type="text/javascript" src="_static/jquery.js"></script>
     <script type="text/javascript" src="_static/underscore.js"></script>
     <script type="text/javascript" src="_static/doctools.js"></script>
-    <link rel="top" title="REEFFIT 0.5 documentation" href="#" /> 
+    <link rel="top" title="REEFFIT 0.5 documentation" href="#" />
+    <link rel="next" title="Getting started with REEFFIT" href="getstarted.html" /> 
   </head>
   <body>
     <div class="related">
@@ -32,6 +33,9 @@
         <li class="right" style="margin-right: 10px">
           <a href="genindex.html" title="General Index"
              accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="getstarted.html" title="Getting started with REEFFIT"
+             accesskey="N">next</a> |</li>
         <li><a href="#">REEFFIT 0.5 documentation</a> &raquo;</li> 
       </ul>
     </div>  
@@ -43,9 +47,16 @@
             
   <div class="section" id="reeffit-package-documentation">
 <h1>REEFFIT package documentation<a class="headerlink" href="#reeffit-package-documentation" title="Permalink to this headline">¶</a></h1>
+<p>REEFFIT (RNA Ensemble Extraction From Footprinting Instights Tool) is a method to fit RNA secondary structure ensembles to multi-dimensional chemical mapping data. Currently, the method can take data from one and multiple mutate-and-map or mutate-bind-and-map (mutate-and-map plus ligand titrations, e.g. for riboswitches) experiments. Output is a set of weights and expected reactivities for each structure that linearly combine to form the data. If the structural ensemble is not provided, REEFFIT uses RNAstructure to generate a suboptimal set of structures of all mutants.</p>
 <p>Contents:</p>
 <div class="toctree-wrapper compound">
-<ul class="simple">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getstarted.html">Getting started with REEFFIT</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="getstarted.html#requirements">Requirements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getstarted.html#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="getstarted.html#running-reeffit">Running REEFFIT</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -56,100 +67,12 @@
 <li><a class="reference internal" href="py-modindex.html"><em>Module Index</em></a></li>
 <li><a class="reference internal" href="search.html"><em>Search Page</em></a></li>
 </ul>
-<div class="section" id="summary">
-<h2>Summary<a class="headerlink" href="#summary" title="Permalink to this headline">¶</a></h2>
-<p>REEFFIT (RNA Ensemble Extraction From Footprinting Instights Tool) is a method to fit RNA secondary structure ensembles to multi-dimensional chemical mapping data. Currently, the method can take data from one and multiple mutate-and-map or mutate-bind-and-map (mutate-and-map plus ligand titrations, e.g. for riboswitches) experiments. Output is a set of weights and expected reactivities for each structure that linearly combine to form the data. If the structural ensemble is not provided, REEFFIT uses RNAstructure to generate a suboptimal set of structures of all mutants.</p>
-<p>A bit of a technical summary:</p>
+<div class="section" id="technical-summary">
+<h2>Technical summary<a class="headerlink" href="#technical-summary" title="Permalink to this headline">¶</a></h2>
 <p>REEFFITs core framework is essentially non-negative factorization with a Gaussian error model (i.e. a form of factor analysis). In this framework, the data is modeled as a linear combination of positive hidden variables:</p>
 <div class="math">
 <p><img src="_images/math/1fd37be892b41d8cc94ec78cd94d5b9cbc47ce44.png" alt="D_{obs} = WD + \epsilon"/></p>
 </div><p>Where <img class="math" src="_images/math/255d1acc360a6676b580dfeafe04f7ae11411253.png" alt="D_{obs}"/> is the data, <img class="math" src="_images/math/fa34489cf430b7630b30f28b2eb050e2489e3523.png" alt="W"/> are the weights and <img class="math" src="_images/math/9dfa31437b58c0473299320aa638151cd88cf61b.png" alt="D"/> are the hidden variables;  <img class="math" src="_images/math/19bc0073dde1bcd1a8e6a32b251e80cced668f04.png" alt="\epsilon"/> is a noise term that has mean 0 and position-wise variance values <img class="math" src="_images/math/a20075243d8e812df8e69c4743f2d0c0d4b14a6f.png" alt="\Psi_i, \forall i=1,...n"/>. In standard factor analysis, the hidden variables are normally distributed, and the likelihood function to obtain the weights and the noise covariance matrix is maximized using the EM algorithm. Fortunately, when the covariance matrix is assumed diagonal (that is, the measured variables are not well correlated), then the E and M steps of the EM algorithm can be written in closed form. However, we have a different, more complicated prior on the hidden variables <img class="math" src="_images/math/9dfa31437b58c0473299320aa638151cd88cf61b.png" alt="D"/>, since in our case these variables are the chemical reactivities for a given structure that are expected to be drawn from a chemical reactivity distribution shaped by the structure. To simplify things, we use chemical reactivity distributions obtained from the RMDB database (<a class="reference external" href="http://rmdb.stanford.edu">http://rmdb.stanford.edu</a>) splitted into two classes: distributions for unpaired and paired nucleotides. Because these priors on <img class="math" src="_images/math/9dfa31437b58c0473299320aa638151cd88cf61b.png" alt="D"/> are far from normal, we cannot use the standard factor analysis EM-algorithm solutions; in fact, the likelihood function derived from the E-step cannot be calculated analytically. Instead, we either use Bayesian inference (Markov Chain Monte Carlo simulations) or maximum a posteriori estimation to solve the optimization problem. The M-step is much simpler, as it can be solved as a quadratic optimization problem with convex constraints (the weights need to be positive and sum to one). For error estimation, we use bootstrapping, although REEFFIT is able to calculate stnadard errors withouth bootstrapping as well.</p>
-</div>
-<div class="section" id="requirements">
-<h2>Requirements<a class="headerlink" href="#requirements" title="Permalink to this headline">¶</a></h2>
-<p>REEFFIT requires the scipy, numpy, matplotlib suite to be installed. Other dependencies include pymc, joblib, and cvxopt. It is recommended that these dependencies be obtained via the enthought package (via canopy).</p>
-</div>
-<div class="section" id="installation">
-<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h2>
-<p>To install REEFFIT, follow these steps:</p>
-<ul class="simple">
-<li>Install rdatkit (see <a class="reference external" href="https://github.com/hitrace/rdatkit">https://github.com/hitrace/rdatkit</a>)</li>
-<li>Go to REEFFIT&#8217;s home directory and type: <tt class="docutils literal"><span class="pre">python</span> <span class="pre">setup.py</span> <span class="pre">install</span></tt></li>
-<li>In your profile (e.g. .bashrc), include an environment variable REEFFIT_HOME that points to the REEFFIT home directory. For example: <tt class="docutils literal"><span class="pre">export</span> <span class="pre">REEFFIT_HOME=/path/to/reeffit</span></tt></li>
-<li>Add the <tt class="docutils literal"><span class="pre">REEFFIT_HOME/bin</span></tt> directory to your path: <tt class="docutils literal"><span class="pre">export</span> <span class="pre">PATH=$PATH:REEFFIT_HOME/bin</span></tt></li>
-<li>Check that REEFFIT is correctly installed. Execute the reeffit command by running <tt class="docutils literal"><span class="pre">reeffit</span></tt> in your shell.</li>
-</ul>
-</div>
-<div class="section" id="running-reeffit">
-<h2>Running REEFFIT<a class="headerlink" href="#running-reeffit" title="Permalink to this headline">¶</a></h2>
-<p>Almost all of REEFFIT&#8217;s functionality is accessed through the <tt class="docutils literal"><span class="pre">reeffit</span></tt> command, located in the <tt class="docutils literal"><span class="pre">REEFFIT_HOME/bin</span></tt> directory that was added to the PATH variable during installation.
-There are four steps that are usually performed in a REEFFIT analysis, all of which are accessed through the <tt class="docutils literal"><span class="pre">reeffit</span></tt> command: obtaining a secondary structure ensemble, preparing cross-validation or bootstrapping shell files, executing the shell files, and compiling the results. The following subsections explain how to run each.</p>
-<div class="section" id="general-form-of-the-reeffit-command">
-<h3>General form of the <tt class="docutils literal"><span class="pre">reeffit</span></tt> command<a class="headerlink" href="#general-form-of-the-reeffit-command" title="Permalink to this headline">¶</a></h3>
-<p>In each of the following analyses, the <tt class="docutils literal"><span class="pre">reeffit</span></tt> command is used in various ways. REEFFIT&#8217;s main input is an RDAT file containing the data and details of the chemical mapping experiment.
-Besides this, the only other necessary option is the output directory. The general form of the <tt class="docutils literal"><span class="pre">reeffit</span></tt> command is:</p>
-<div class="highlight-python"><div class="highlight"><pre>reeffit RDAT_FILE OUTPUT_DIR [OPTIONS]
-</pre></div>
-</div>
-<p>The options given to REEFFIT will dictate its behavior.</p>
-</div>
-<div class="section" id="obtaining-the-structural-ensemble">
-<h3>Obtaining the structural ensemble<a class="headerlink" href="#obtaining-the-structural-ensemble" title="Permalink to this headline">¶</a></h3>
-<p>If a hypothesized secondary structure ensemble is not available, REEFFIT can estimate it using one of several methods:</p>
-<ul class="simple">
-<li>Sampling of the suboptimal ensemble for all sequences (option <tt class="docutils literal"><span class="pre">--modelselect=sample</span></tt>): Up to 200 suboptimal structures that lie in at most 5% distance to the minimum free energy secondary structure are sampled for each sequence in the ensemble. The full resulting set of structures (usually on the order of 200 to 1000 for RNAs of 100 to 200 nucleotides in length), located in <tt class="docutils literal"><span class="pre">OUTPUT_DIR/all_structures.txt</span></tt> are used for subsequent analyses.</li>
-<li>Selection of a small number of structures in the suboptimal ensemble that best agree with the data a priori (option <tt class="docutils literal"><span class="pre">modelselect=heuristic</span></tt>): The same procedure as in the point above is used to obtain a large number of suboptimal structures. These are then clustered into a small number of clusters (calculated by maximizing the Calinksi-Barabasz index) and representatives for each cluster are chosen by scoring them against each chemical mapping profile in the data using 1-dimensional mapping secondary struture directed modeling. Additional high-scoring structures are added if they decrease the AIC information score after a few EM iterations.</li>
-</ul>
-<p>The recomended method to obtain the structural ensemble is the first one: using all the structures sampled. We have observed that this captures most of the data better and can be properly regularized with several priors to account for the large number of variables to fit (see below).
-Therefore, to obtain the structural ensemble, the reeffit command would be:</p>
-<div class="highlight-python"><div class="highlight"><pre>reeffit RDAT_FILE OUTPUT_DIR --modelselect=sample
-</pre></div>
-</div>
-</div>
-<div class="section" id="important-options-for-fitting-the-ensemble-to-the-data">
-<h3>Important options for fitting the ensemble to the data<a class="headerlink" href="#important-options-for-fitting-the-ensemble-to-the-data" title="Permalink to this headline">¶</a></h3>
-<p>There are several options that affect the way REEFFIT performs the fit to the data. The most important ones to consider are the ones below:</p>
-<ul class="simple">
-<li>Number of parallel jobs (option <tt class="docutils literal"><span class="pre">--njobs</span></tt>): Some of REEFFIT&#8217;s calculations can be performed quickly in parallelized form. This option can specify the number of jobs to split the calculations into.</li>
-<li>Number of EM iterations (option <tt class="docutils literal"><span class="pre">--refineiter</span></tt>): Number of maximum EM iterations to perform. The default is 10.</li>
-<li>Mode of inference for the E-step (option <tt class="docutils literal"><span class="pre">--softem</span></tt> to use soft EM (MCMC inference) instead of the default hard EM (MAP estimation) mode): The most rigorous way to run REEFFIT is using the <tt class="docutils literal"><span class="pre">--softem</span></tt>  option to perform MCMC inference at each E-step in the calculation (set the number of simulation steps to take with the <tt class="docutils literal"><span class="pre">--nsim</span></tt> option, which defaults to 1000). This however, is terribly costly computationally and can come at an expense of other important downstream analyses, like bootstrapping. In our experience, performing hard EM does not alter the results terribly and can therefore be safely used.</li>
-<li>Motif decomposition (option <tt class="docutils literal"><span class="pre">--decompose</span></tt>, default is no decomposition): When the ensemble to fit is large, it may be useful to decompose the structures into overlapping secondary structure motifs, forcing all motifs that are structurally the same to have the same reactivity profile. This greatly reduces the number of variables in the model and speeds up the computation. Note that this is not activated by default.</li>
-<li>Data normalization (option <tt class="docutils literal"><span class="pre">--boxnormalize</span></tt>): When handling capillary electrophoresis chemical mapping data that has not been rigorously normalize (through, for example, a dilution series), it is recommended to normalize the data to conform to the prior reactivities coded into REEFFIT. This option should box the data into values from 0 to 2 and get rid of outliers. Note that if normalization has been previously peformed on the dataset, this additional normalization will produce large artifacts and will essentially &#8220;flatten&#8221; the data.</li>
-</ul>
-</div>
-<div class="section" id="preparing-bootstrap-files">
-<h3>Preparing bootstrap files<a class="headerlink" href="#preparing-bootstrap-files" title="Permalink to this headline">¶</a></h3>
-<p>In order to robustly estimate population fraction errors, we perform boostrapping. Because bootstrapping is computationally expensive, we recommend using the <tt class="docutils literal"><span class="pre">reeffit</span></tt> command to prepare shell &#8220;worker&#8221; scripts that will perform the bootstrapping in parallel. To achieve this, we use the <tt class="docutils literal"><span class="pre">--preparebootstrap</span></tt> option. To set up the scripts, we have to divide the number of bootstraps into the number of worker scripts that are going to be running simultaneously using the <tt class="docutils literal"><span class="pre">--nworkers</span></tt> and <tt class="docutils literal"><span class="pre">--ntasks</span></tt> options. For example, to set up 100 bootstraps for 5 workers, we would use the options <tt class="docutils literal"><span class="pre">--nworkers=5</span> <span class="pre">--ntasks=20</span></tt>.
-It is important to note that every option passed to the command will be passed to the worker scripts.
-Assuming that we have the structural ensemble in <tt class="docutils literal"><span class="pre">OUTPUT_DIR/all_structures.txt</span></tt> and we want to activate motif decomposition, the REEFFIT command for this task would be:</p>
-<div class="highlight-python"><div class="highlight"><pre>reeffit RDAT_FILE OUTPUT_DIR --structfile=OUTPUT_DIR/all_structures.txt --decompose --preparebootstrap --nworkers=5 --ntasks=20
-</pre></div>
-</div>
-<p>This will write several <tt class="docutils literal"><span class="pre">bootstrap_workerN.sh</span></tt> scripts to the output directory, as well as a <tt class="docutils literal"><span class="pre">master_bootstrap_script.sh</span></tt></p>
-</div>
-<div class="section" id="executing-the-boostrap-workers-and-compiling-results">
-<h3>Executing the boostrap workers and compiling results<a class="headerlink" href="#executing-the-boostrap-workers-and-compiling-results" title="Permalink to this headline">¶</a></h3>
-<p>Once the bootstrapping files are set up, we can execute them and compile the results using the master script.
-To execute the bootstrap workers prepared in the section above, execute the generated master script:</p>
-<div class="highlight-python"><div class="highlight"><pre>sh OUTPUT_DIR/master_bootstrap_script.sh execute
-</pre></div>
-</div>
-<p>All workers will then execute in parallel and store their results in <tt class="docutils literal"><span class="pre">OUTPUT_DIR/bootN</span></tt> directories.
-After the workers are done, you can compile their results using the master script as well:</p>
-<div class="highlight-python"><div class="highlight"><pre>sh OUTPUT_DIR/master_bootstrap_script.sh compile
-</pre></div>
-</div>
-<p>This will take some time, since it will do a REEFFIT fit will the full data in addition to compile the bootstrapping results.</p>
-</div>
-<div class="section" id="generating-a-pdf-report">
-<h3>Generating a PDF report<a class="headerlink" href="#generating-a-pdf-report" title="Permalink to this headline">¶</a></h3>
-<p>Optionally, REEFFIT can produce a PDF report of the bootstrap results.
-This is achieved with the <tt class="docutils literal"><span class="pre">reeffit_report</span></tt> command, which is added to your PATH variable during installation:</p>
-<div class="highlight-python"><div class="highlight"><pre>reeffit_report OUTPUT_DIR NAME PREFIX
-</pre></div>
-</div>
-<p>Here, the NAME option is just to give a name to output structures in the report. The PREFIX option specifies which result files REEFFIT will use to generate the report. For example, all result files in the bootstrap analysis by default start with the bootstrap prefix. Therefore, to generate a report using the bootstrap results, PREFIX would be set to bootstrap.</p>
-</div>
 </div>
 <div class="section" id="contact">
 <h2>Contact<a class="headerlink" href="#contact" title="Permalink to this headline">¶</a></h2>
@@ -175,24 +98,16 @@ This is achieved with the <tt class="docutils literal"><span class="pre">reeffit
   <ul>
 <li><a class="reference internal" href="#">REEFFIT package documentation</a></li>
 <li><a class="reference internal" href="#indices-and-tables">Indices and tables</a><ul>
-<li><a class="reference internal" href="#summary">Summary</a></li>
-<li><a class="reference internal" href="#requirements">Requirements</a></li>
-<li><a class="reference internal" href="#installation">Installation</a></li>
-<li><a class="reference internal" href="#running-reeffit">Running REEFFIT</a><ul>
-<li><a class="reference internal" href="#general-form-of-the-reeffit-command">General form of the <tt class="docutils literal"><span class="pre">reeffit</span></tt> command</a></li>
-<li><a class="reference internal" href="#obtaining-the-structural-ensemble">Obtaining the structural ensemble</a></li>
-<li><a class="reference internal" href="#important-options-for-fitting-the-ensemble-to-the-data">Important options for fitting the ensemble to the data</a></li>
-<li><a class="reference internal" href="#preparing-bootstrap-files">Preparing bootstrap files</a></li>
-<li><a class="reference internal" href="#executing-the-boostrap-workers-and-compiling-results">Executing the boostrap workers and compiling results</a></li>
-<li><a class="reference internal" href="#generating-a-pdf-report">Generating a PDF report</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#technical-summary">Technical summary</a></li>
 <li><a class="reference internal" href="#contact">Contact</a></li>
 <li><a class="reference internal" href="#license">License</a></li>
 </ul>
 </li>
 </ul>
 
+  <h4>Next topic</h4>
+  <p class="topless"><a href="getstarted.html"
+                        title="next chapter">Getting started with REEFFIT</a></p>
   <h3>This Page</h3>
   <ul class="this-page-menu">
     <li><a href="_sources/index.txt"
@@ -221,6 +136,9 @@ This is achieved with the <tt class="docutils literal"><span class="pre">reeffit
         <li class="right" style="margin-right: 10px">
           <a href="genindex.html" title="General Index"
              >index</a></li>
+        <li class="right" >
+          <a href="getstarted.html" title="Getting started with REEFFIT"
+             >next</a> |</li>
         <li><a href="#">REEFFIT 0.5 documentation</a> &raquo;</li> 
       </ul>
     </div>

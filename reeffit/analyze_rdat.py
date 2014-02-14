@@ -80,7 +80,7 @@ parser.add_argument('--nostructlabels', default=False, action='store_true', help
 # Fitting options
 parser.add_argument('--nsim', default=1000, type=int, help='Number of simulations used for each E-step when performing soft EM.')
 parser.add_argument('--refineiter', default=10, type=int, help='Maximum number of EM iterations to perform')
-parser.add_argument('--hardem', default=False, action='store_true', help='Perform hard EM instead of soft EM, finding a MAP of the hidden reactivities, rather than simulating from the posterior. This makes REEFFIT run considerably faster, but does not yield a rigorous, posterior distribution estimation of the hidden reactivities of each structure.')
+parser.add_argument('--softem', default=False, action='store_true', help='Perform soft EM instead of hard EM, using MCMC in each E-step. Set the nsim option to calibrate number of MCMC iterations.')
 parser.add_argument('--energydelta', default=None, type=float, help='Kcal/mol free energy limit that the structure weights are allowed to deviate from the initial weights -- this is a hard limit, as opposed to lamweights option.')
 parser.add_argument('--clusterdatafactor', type=int, default=None, help='For clustering the data to reduce dimensionality (useful for large datasets with lots of redundant measurements). Describes the approximate number of clusters for clustering the data')
 parser.add_argument('--preparebootstrap', action='store_true', default=False, help='Prepare bootstrap worker files.')
@@ -108,7 +108,7 @@ args = parser.parse_args()
 model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic', 'cv':'Cross-validation', 'sample':'Suboptimal structure sampling'}
 worker_file_formats = ['gridengine', 'sh']
 carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
-        'decompose', 'cutoff', 'start', 'end', 'hardem', 'energydelta', 'titrate',
+        'decompose', 'cutoff', 'start', 'end', 'softem', 'energydelta', 'titrate',
         'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize', 'addrdatfiles', 'crossvalidate']
 regparams = {'lamreacts':args.lamreacts, 'lamweights':args.lamweights, 'lammut':args.lammut, 'lamridge':args.lamridge}
 MAX_STRUCTURES_PLOT = 10
@@ -566,7 +566,7 @@ if args.modelselect != None:
 
     if args.modelselect == 'heuristic':
         fa.energies = energies
-        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, hard_em=args.hardem, method=args.modelselect, post_model=args.postmodel)
+        selected_structures, assignments = fa.model_select(greedy_iter=args.greedyiter, max_iterations=2, prior_swap=not args.nopriorswap, expstruct_estimation=args.structest, G_constraint=args.energydelta, apply_pseudoenergies=not args.nopseudoenergies, algorithm=args.priorweights, soft_em=args.softem, method=args.modelselect, post_model=args.postmodel)
         print 'Getting sequence energies'
         energies = get_free_energy_matrix(structures, mutants)
         print 'Getting cluster energies'
@@ -615,12 +615,12 @@ if args.cvfold > 0:
         fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge, njobs=args.njobs)
         if args.decompose:
             fa_cv.perform_motif_decomposition()
-        lhood_traces, W_cv, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=cv_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+        lhood_traces, W_cv, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=cv_indices, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
 
         fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge, njobs=args.njobs)
         if args.decompose:
             fa_cv.perform_motif_decomposition()
-        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W_cv, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=pred_indices, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W_cv, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=pred_indices, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
 
         data_pred_cv, sigma_pred_cv = fa_cv.calculate_data_pred()
         data_pred_cv[data_pred_cv >= data_pred_cv.mean()] = 1
@@ -686,7 +686,7 @@ seqpos_iter = [seqpos_cutoff[i] for i in I]
 
 # Perform the analysis
 
-lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, hard_em=args.hardem, post_model=args.postmodel)
+lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
 
 # Get the most frequent medoid per structure cluster
 if args.medoidfile != None:
@@ -931,7 +931,7 @@ else:
             f.set_size_inches(15, 5)
             clf()
             title('Structure %s: %s' % (s, structures[s]))
-            if args.hardem:
+            if not args.softem:
                 expected_reactivity_plot(E_d_fa[s,:], fa.structures[s], yerr=sigma_d_fa[s,:], seq_indices=I)
             else:
                 expected_reactivity_plot(E_d_fa[s,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
@@ -968,7 +968,7 @@ else:
                 f.set_size_inches(15, 5)
                 clf()
                 title('Structure %s: %s' % (s, structures[s]))
-                if args.hardem:
+                if not args.softem:
                     expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:], seq_indices=I)
                 else:
                     expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
@@ -1065,7 +1065,7 @@ if args.compilebootstrap:
         #make_struct_figs([structures[m] for m in maxmedoids], 'cluster_', base_annotations=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))), annotation_color='#0033CC')
 
 
-    fa.analyze(max_iterations=1, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, hard_em=args.hardem, W0=Wcompile_mean)
+    fa.analyze(max_iterations=1, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, soft_em=args.softem, W0=Wcompile_mean)
 
     _, data_pred_boot, sigma_pred_boot = fa.correct_scale(stype=args.scalemethod)
     stats_boot = {}

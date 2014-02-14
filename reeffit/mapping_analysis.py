@@ -284,7 +284,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             self.W, self.struct_weights_by_clust = utils.calculate_weights(self.energies, clusters=cluster_indices)
 
-    def model_select(self, expected_structures=0, greedy_iter=0, expstruct_estimation='hclust', tol=1e-4, max_iterations=10, prior_swap=True, G_constraint=None, apply_pseudoenergies=True, algorithm='rnastructure', hard_em=False, method='heuristic', post_model=False):
+    def model_select(self, expected_structures=0, greedy_iter=0, expstruct_estimation='hclust', tol=1e-4, max_iterations=10, prior_swap=True, G_constraint=None, apply_pseudoenergies=True, algorithm='rnastructure', soft_em=False, method='heuristic', post_model=False):
         print 'Starting model selection'
         if method not in FAMappingAnalysis.MODEL_SELECT_METHODS:
             raise ValueError('Unrecognized model selection method %s' % method)
@@ -398,7 +398,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             print [self.structures[i] for i in selected_structs]
             lhood_opt, W_opt, W_std_opt, Psi_opt, E_d_opt, E_c_opt, sigma_d_opt, E_ddT_opt, perturbs_opt, post_structures_opt = self.analyze(max_iterations=2, tol=tol, \
                                                                          nsim=5000, select_struct_indices=maxmedoids.values(), G_constraint=G_constraint,\
-                                                                         hard_em=hard_em, post_model=post_model)
+                                                                         soft_em=soft_em, post_model=post_model)
             minAICc = utils.AICc(lhood_opt, self.data, W_opt, E_d_opt, E_c_opt, Psi_opt)
             def structure_similarity(s1, s2):
                 simcounts = 0.
@@ -434,7 +434,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     continue
                 lhood, W, W_std, Psi, E_d, E_c, sigma_d, E_ddT, perturbs, post_structures = self.analyze(max_iterations=max_iterations, tol=tol, \
                                                                    nsim=5000, \
-                                                                   select_struct_indices=selected_structs + [new_struct], G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
+                                                                   select_struct_indices=selected_structs + [new_struct], G_constraint=G_constraint, soft_em=soft_em, post_model=post_model)
                 currAICc = utils.AICc(lhood, self.data, W, E_d, E_c, Psi)
                 if currAICc < minAICc:
                     AICc_decreased = True
@@ -455,7 +455,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     reduced_structs = [selected_structs[j] for j in xrange(len(selected_structs)) if j != i]
                     lhood, W, W_std, Psi, E_d, E_c, sigma_d, E_ddT, perturbs, post_structures = self.analyze(max_iterations=max_iterations, tol=tol, \
                                                                        nsim=5000, \
-                                                                       select_struct_indices=reduced_structs, G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
+                                                                       select_struct_indices=reduced_structs, G_constraint=G_constraint, soft_em=soft_em, post_model=post_model)
                     currAICc = utils.AICc(lhood, self.data, W, E_d, E_c, Psi)
                     if currAICc < minAICc:
                         AICc_decreased = True
@@ -497,13 +497,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             starting_structures = sample(all_struct_indices, expected_structures)
             lhood_opt, W_opt, W_std_opt, Psi_opt, E_d_opt, E_c_opt, sigma_d_opt, E_ddT_opt, perturbs, post_structures = self.analyze(max_iterations=max_iteration, tol=tol, \
                                                                                nsim=est_nstructs*100, \
-                                                                               select_struct_indices=starting_structures, G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
+                                                                               select_struct_indices=starting_structures, G_constraint=G_constraint, soft_em=soft_em, post_model=post_model)
             minAICc = utils.AICc(lhood_opt, self.data, W_opt, E_d_opt, E_c_opt, Psi_opt)
             for subset in itertools.combinations(all_struct_indices, expected_structures):
                 if subset != starting_structures:
                     lhood, W, W_std, Psi, E_d, E_d, sigma_d, E_ddT, perturbs, post_structures = self.analyze(max_iterations=max_iteration, tol=tol, \
                                                                                        nsim=est_nstructs*100, \
-                                                                                       select_struct_indices=subset, G_constraint=G_constraint, hard_em=hard_em, post_model=post_model)
+                                                                                       select_struct_indices=subset, G_constraint=G_constraint, soft_em=soft_em, post_model=post_model)
                     currAICc = utils.AICc(lhood, self.data, W, E_d, E_c, Psi)
                     if currAICc < minAICc:
                         minAICc = currAICc
@@ -1167,7 +1167,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             return linalg.det(Psi)
 
-    def analyze(self, max_iterations=100, tol=1e-4, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, return_loglikes=False, hard_em=False, post_model=False):
+    def analyze(self, max_iterations=100, tol=1e-4, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, return_loglikes=False, soft_em=False, post_model=False):
         # Sometimes, e.g. model selection, we want just to test a subset of structures, we do that via select_struct_indices
         # to indicate the structure indices that we want to try
         if len(select_struct_indices) > 0:
@@ -1309,7 +1309,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         while t < max_iterations:
             # E-step
             loglike = -npos*nmeas/2.*log(2.*pi)
-            if hard_em:
+            if not soft_em:
                 if self.njobs != None:
                     def par_fun(i):
                         return self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist, seq_indices)

@@ -155,20 +155,14 @@ def cluster_structures(struct_types, structures=[], distance='mutinf', expected_
     print 'Done clustering structures, with %s clusters' % numclusts
     return maxmedoids, assignments
 
-def normalize(bonuses):
-    l = len(bonuses)
-    wtdata = array(bonuses)
-    if wtdata.min() < 0:
-	wtdata -= wtdata.min()
-    interquart = stats.scoreatpercentile(wtdata, 75) - stats.scoreatpercentile(wtdata, 25)
-    tenperc = stats.scoreatpercentile(wtdata, 90)
-    maxcount = 0
-    maxav = 0.
-    for i in range(l):
-	if wtdata[i] >= tenperc:
-	    maxav += wtdata[i]
-	    maxcount += 1
-    maxav /= maxcount
+def normalize(data):
+    wtdata = array(data)
+    wtdata[wtdata < 0] = 0
+    q1 = stats.scoreatpercentile(wtdata, 25)
+    q3 = stats.scoreatpercentile(wtdata, 75)
+    interquart = q3 - q1
+    tenperc = stats.scoreatpercentile(wtdata[wtdata <= q1 + 1.5*interquart], 90)
+    maxav = wtdata[wtdata >= tenperc].mean()
     wtdata = wtdata/maxav
     return wtdata
 
@@ -518,7 +512,7 @@ def get_minimal_overlapping_motif_decomposition(structures, bytype=False, offset
             idx = j
     """
 
-def bpp_matrix_from_structures(structures, weights, weight_err=None):
+def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_noise_cutoff=0):
     npos = len(structures[0])
     bppm = zeros([npos, npos])
     if weight_err != None:
@@ -529,7 +523,12 @@ def bpp_matrix_from_structures(structures, weights, weight_err=None):
             if weight_err != None:
                 bppm_err[n1,n2] += weight_err[i]**2
     if weight_err != None:
-        return bppm, sqrt(bppm_err)
+        bppm_err = sqrt(bppm_err)
+        for i in xrange(bppm.shape[0]):
+            for j in xrange(bppm.shape[1]):
+                if bppm[i,j] != 0 and bppm_err[i,j] != 0 and (bppm[i,j]/bppm_err[i,j] < signal_to_noise_cutoff):
+                    bppm[i,j] = 0
+        return bppm, bppm_err
     else:
         return bppm
 

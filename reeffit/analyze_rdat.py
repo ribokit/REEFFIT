@@ -81,6 +81,7 @@ parser.add_argument('--nostructlabels', default=False, action='store_true', help
 parser.add_argument('--nsim', default=1000, type=int, help='Number of simulations used for each E-step when performing soft EM.')
 parser.add_argument('--refineiter', default=10, type=int, help='Maximum number of EM iterations to perform')
 parser.add_argument('--softem', default=False, action='store_true', help='Perform soft EM instead of hard EM, using MCMC in each E-step. Set the nsim option to calibrate number of MCMC iterations.')
+parser.add_argument('--hardem', default=True, action='store_true', help='Perform hard EM (DEPRECATED: this option is turned on by default)')
 parser.add_argument('--energydelta', default=None, type=float, help='Kcal/mol free energy limit that the structure weights are allowed to deviate from the initial weights -- this is a hard limit, as opposed to lamweights option.')
 parser.add_argument('--clusterdatafactor', type=int, default=None, help='For clustering the data to reduce dimensionality (useful for large datasets with lots of redundant measurements). Describes the approximate number of clusters for clustering the data')
 parser.add_argument('--preparebootstrap', action='store_true', default=False, help='Prepare bootstrap worker files.')
@@ -90,7 +91,7 @@ parser.add_argument('--kdfile', default=None, type=argparse.FileType('r'), help=
 parser.add_argument('--lamreacts', default=0.0, type=float, help='Regularization parameter controlling the similarity between reactivities of similar structures. Higher values will force similar reactivities between structures, depending on their base pair distance.')
 parser.add_argument('--lamweights', default=0.0, type=float, help='Regularization parameter controlling how far from the initial weight estimates (e.g. from RNAstructure or ViennaRNA). Higher values will force weights to be closer to initial estimates')
 parser.add_argument('--lammut', default=5.0, type=float, help='Regularization parameter controlling similarities of delta delta Gs of weights of wild type and mutants to the ones calculated by the secondary structure algorithm (e.g. RNAstructure or ViennaRNA). Higher values will force delta delta G values between wild type and mutant structures to be similar.')
-parser.add_argument('--lamridge', default=0.26, type=float, help='Regularization parameter controlling the signal strength (smoothened sparsity) of the weights. Higher values will penalize large weights.')
+parser.add_argument('--lamridge', default=0.2, type=float, help='Regularization parameter controlling the signal strength (smoothened sparsity) of the weights. Higher values will penalize large weights.')
 parser.add_argument('--lamfile', default=None, type=argparse.FileType('r'), help='File with results of a cross-validation run. Format is lines with cross_validation_error, lam_reacts, lam_weights; tab-delimited. Values with lowest cross_validation_error will be taken for values of lam_reacts and lam_weights [UNTESTED].')
 parser.add_argument('--decompose', action='store_true', default=False, help='Decompose structures into a set of overlapping motifs to reduce number of variables to fit.')
 parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits')
@@ -328,6 +329,7 @@ for rdatidx, rdatfile in enumerate([args.rdatfile] + args.addrdatfiles):
             #nd = [d.values[seqpos.index(i)] for i in sorted_seqpos]
         else:
             nd = normalize([d.values[seqpos.index(i)] for i in sorted_seqpos])
+
         if args.clipzeros:
             nd_last_sepos = len(seqpos)
             for i in xrange(len(nd)-1, -1, -1):
@@ -344,7 +346,8 @@ if args.clipzeros:
     data = array(data)[:,:last_seqpos]
 else:
     data = array(data)
-
+plot(data[0,:])
+show()
 for i in xrange(data.shape[0]):
     for j in xrange(data.shape[1]):
         if data[i,j] == 0:
@@ -1016,10 +1019,14 @@ if args.compilebootstrap:
             nboot += 1
             print 'Doing %s' % fname
             if os.path.exists('%s/worker_dict.pickle' % dirname):
-                worker_dict = pickle.load(open('%s/worker_dict.pickle' % dirname))
-                Wtmp = zeros([nmeas, nstructs, 1])
-                Wtmp[:,:,0] = worker_dict['W']
-                Wcompile = append(Wcompile, Wtmp, axis=2)
+                try:
+                    worker_dict = pickle.load(open('%s/worker_dict.pickle' % dirname))
+                    Wtmp = zeros([nmeas, nstructs, 1])
+                    Wtmp[:,:,0] = worker_dict['W']
+                    Wcompile = append(Wcompile, Wtmp, axis=2)
+                except Exception as e:
+                    print e
+                    print 'Failed loading worker dictionary, skipping this directory'
 
     # This has to be done due to some weirdness in how CVXOPT converts
     # numpy arrays to its own matrices...voodoo

@@ -762,7 +762,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         sigma_d__obs = mat(zeros([nstructs]))
         if self.use_motif_decomposition:
             for s in xrange(nmotifs):
-                sigma_d__obs[0,motifidx(s)] = sqrt(1/(Psi_inv[0,0]*(W[:,motifidx(s)]**2).sum()))
+                sigma_d__obs[0,motifidx(s)] = sqrt(1/(Psi_inv[0,0]*(W[:,motifidx(s)]**2).sum() + 1e-10))
         else:
             for s in xrange(nstructs):
                 sigma_d__obs[0,s] = sqrt(1/(Psi_inv[0,0]*(W[:,s]**2).sum()))
@@ -1032,8 +1032,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     E_ddT_Psi_inv += Psi_inv[i,j,j]*E_ddT[:,:,i]
 
                 if self.lam_weights != 0:
-                    E_ddT_Psi_inv += self.lam_weights*diag(1/(W_initvals[j,:]**2))
-                    E_d_proj += self.lam_weights*mat(1./W_initvals[j,:]).T
+                    E_ddT_Psi_inv += self.lam_weights*diag(1/(W_initvals[j,:]**2 + 1e-10))
+                    E_d_proj += self.lam_weights*mat(1./(W_initvals[j,:] + 1e-10)).T
 
                 if self.lam_mut != 0 and j in self.wt_indices:
                     E_ddT_Psi_inv += self.lam_mut*eye(W.shape[1])
@@ -1123,7 +1123,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     I_W[j,s] += dot(Psi_inv_vec, E_ddT[s,sp,:])
             """
         I_W[I_W == 0] = 1e-100
-        return sqrt(1/I_W)
+        return 10*sqrt(1/I_W)
 
     def _E_d_c_j(self, E_d, E_c, j, contact_sites):
         E_d_c_j = mat(zeros(E_d.shape))

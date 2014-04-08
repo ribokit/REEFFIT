@@ -59,6 +59,7 @@ parser.add_argument('--csize', type=int, default=3, help='Number of sequence pos
 parser.add_argument('--boxnormalize', default=False, action='store_true', help='Perform box-plot normalization of the data. Useful for capillary sequencing datasets')
 parser.add_argument('--nworkers', type=int, default=10, help='For cross validation, MC model selection or bootstrapping. Number of workers.')
 parser.add_argument('--workerformat', type=str, default='sh', help='File format of worker files. Can be "sh" (for simple shell script) and "qsub" (for use with e.g. grid engine')
+parser.add_argument('--workercommand', type=str, default='sh', help='Command for executing the job files. "sh" is the default, other options may include "qsub" or "qsub [qsub options]"')
 parser.add_argument('--ntasks', type=int, default=100, help='Number of tasks (cross-validation parameters to try, bootstrap iterations, or Monte Carlo simulations) per worker')
 
 # Model selection options
@@ -107,7 +108,7 @@ args = parser.parse_args()
 
 # Global variables
 model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic', 'cv':'Cross-validation', 'sample':'Suboptimal structure sampling'}
-worker_file_formats = ['gridengine', 'sh']
+worker_file_formats = ['qsub', 'sh']
 carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
         'decompose', 'cutoff', 'start', 'end', 'softem', 'energydelta', 'titrate',
         'nomutrepeat', 'clipzeros', 'kdfile', 'boxnormalize', 'priorweights', 'njobs', 'csize', 'addrdatfiles', 'crossvalidate']
@@ -210,7 +211,7 @@ def write_worker_master_script(workerfiles, wtype):
     mwf = open('%smaster_script_%s.sh' % (args.outprefix, wtype), 'w')
     mwf.write('#!/bin/bash\n')
     mwf.write('if [ "$1" = "execute" ]\nthen\n')
-    mwf.write('\t' + ' &\n\t'.join(['%s %s' % (args.workerformat, w) for w in workerfiles]) + ' & \n')
+    mwf.write('\t' + ' &\n\t'.join(['%s %s' % (args.workercommand, w) for w in workerfiles]) + ' & \n')
     general_options = '%s %s/ --structfile %s' % (os.path.abspath(args.rdatfile.name), args.outprefix, os.path.abspath(args.structfile.name))
     general_options += carry_on_option_string()
     if wtype == 'bootstrap':

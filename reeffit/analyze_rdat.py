@@ -100,6 +100,7 @@ parser.add_argument('--seqindices', type=str, default=None, help='Sequence indic
 parser.add_argument('--compilebootstrap', action='store_true', default=False, help='Compile bootstrapping results. Will locate all boot* subdirectories in outprefix and extract the weights of each bootstrap iteration and compile a summary.')
 
 # Plotting options
+parser.add_argument('--justplot', action='store_true', default=False, help='Do not perform the analysis, just plot the results based on pickled result objects from previous analysis located in the output directory.')
 parser.add_argument('--splitplots', default=-1, type=int, help='Plot subsets of data and predicted data rather than the whole set')
 parser.add_argument('--detailedplots', default=False, action='store_true', help='Plots log-likelihood trace, all predicted data vs real data separately, and comparison plots between initial and final structure weights')
 parser.add_argument('--dpi', type=int, default=200, help='DPI resolution for plots')
@@ -690,7 +691,22 @@ seqpos_iter = [seqpos_cutoff[i] for i in I]
 
 # Perform the analysis
 
-lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
+if args.justplot:
+    print 'Loading results from previous run'
+    W_fa = pickle.load(open('%s/W.pickle' % args.outprefix))
+    W_fa_std = pickle.load(open('%s/W_std.pickle' % args.outprefix))
+    Psi_fa = pickle.load(open('%s/Psi.pickle' % args.outprefix))
+    E_d_fa = pickle.load(open('%s/E_d.pickle' % args.outprefix))
+    E_c_fa = pickle.load(open('%s/E_c.pickle' % args.outprefix))
+    E_ddT_fa = pickle.load(open('%s/E_ddT.pickle' % args.outprefix))
+    M_fa = pickle.load(open('%s/M.pickle' % args.outprefix))
+    data_pred = pickle.load(open('%s/data_pred.pickle' % args.outprefix))
+    sigma_pred = pickle.load(open('%s/sigma_pred.pickle' % args.outprefix))
+    # TODO: THIS IS A PLACEHOLDER! Need to save the sigma_d in a pickle file and load
+    sigma_d_fa = E_d_fa.copy()/2.
+else:
+    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
+
 
 # Get the most frequent medoid per structure cluster
 if args.medoidfile != None:
@@ -723,7 +739,8 @@ if args.postmodel:
 
 # Get the likelihood traces and points where the covariance reaches negative values
 # and needs to be reinitialized
-loglikes, Psi_reinits = lhood_traces
+if not args.justplot:
+    loglikes, Psi_reinits = lhood_traces
 
 # Get the selected structures on the clusters if we are provided a structure cluster file
 if args.clusterfile:
@@ -734,10 +751,10 @@ print 'Selected structures were:'
 for i in selected_structures:
     print '%s %s' % (i,fa.structures[i])
 
-corr_facs, data_pred, sigma_pred = fa.correct_scale(stype=args.scalemethod)
-
-missed_indices, missed_vals = fa.calculate_missed_predictions(data_pred=data_pred)
-chi_sq, rmsea, aic = fa.calculate_fit_statistics()
+if not args.justplot:
+    corr_facs, data_pred, sigma_pred = fa.correct_scale(stype=args.scalemethod)
+    missed_indices, missed_vals = fa.calculate_missed_predictions(data_pred=data_pred)
+    chi_sq, rmsea, aic = fa.calculate_fit_statistics()
 
 
 if args.clusterdatafactor and not args.worker:
@@ -816,21 +833,22 @@ if args.worker:
 
     print 'Worker results were appended to %s' % report.name
 else:
-    print 'Printing report'
-    report = open('%s/report.txt' % prefix,'w')
-    report.write('Arguments: %s\n' % args)
-    if wt_idx != -1:
-        report.write('Structure index\tStructure\tWild type weight\tWeight std\n')
-    else:
-        report.write('No Wild type found in data set\n')
-        report.write('Structure index\tStructure\tSeq 0 weight\tSeq 0 std\n')
-    for i, s in enumerate(selected_structures):
-        report.write('%s\t%s\t%.3f\t%.3f\n' % (i, fa.structures[s], W_fa[0,i], W_fa_std[0,i]))
-    report.write('Likelihood: %s\n' % max(loglikes))
-    report.write('chi squared/df: %s\n' % chi_sq)
-    report.write('RMSEA: %s\n' % rmsea)
-    report.write('AIC: %s\n' % aic)
-    report.close()
+    if not args.justplot:
+        print 'Printing report'
+        report = open('%s/report.txt' % prefix,'w')
+        report.write('Arguments: %s\n' % args)
+        if wt_idx != -1:
+            report.write('Structure index\tStructure\tWild type weight\tWeight std\n')
+        else:
+            report.write('No Wild type found in data set\n')
+            report.write('Structure index\tStructure\tSeq 0 weight\tSeq 0 std\n')
+        for i, s in enumerate(selected_structures):
+            report.write('%s\t%s\t%.3f\t%.3f\n' % (i, fa.structures[s], W_fa[0,i], W_fa_std[0,i]))
+        report.write('Likelihood: %s\n' % max(loglikes))
+        report.write('chi squared/df: %s\n' % chi_sq)
+        report.write('RMSEA: %s\n' % rmsea)
+        report.write('AIC: %s\n' % aic)
+        report.close()
     r = arange(data_cutoff.shape[1])
 
     # Structure cluster landscape plot for wild type
@@ -867,12 +885,13 @@ else:
         plot_mutxpos_image(data_pred[i:i+args.splitplots], sequence, seqpos_iter, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)], vmax=data_cutoff[i:i+args.splitplots,:].mean())
         savefig('%s/reeffit_data_pred%s.png' % (prefix, isuffix), dpi=args.dpi)
 
-        figure(1)
-        clf()
-        plot_mutxpos_image(data_pred[i:i+args.splitplots], sequence, seqpos_iter, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)],
-                #missed_indices=missed_indices, contact_sites=fa.contact_sites, weights=W_fa[i:i+args.splitplots,:])
-                missed_indices=missed_indices, weights=W_fa[i:i+args.splitplots,:])
-        savefig('%s/data_pred_annotated%s.png' % (prefix,isuffix), dpi=args.dpi)
+        if not args.justplot:
+            figure(1)
+            clf()
+            plot_mutxpos_image(data_pred[i:i+args.splitplots], sequence, seqpos_iter, offset, [mut_labels[k] for k in xrange(i, i+args.splitplots)],
+                    #missed_indices=missed_indices, contact_sites=fa.contact_sites, weights=W_fa[i:i+args.splitplots,:])
+                    missed_indices=missed_indices, weights=W_fa[i:i+args.splitplots,:])
+            savefig('%s/data_pred_annotated%s.png' % (prefix,isuffix), dpi=args.dpi)
 
 
         figure(1)
@@ -921,13 +940,14 @@ else:
 
 
         # Plot Log-likelihood trace
-        figure(3)
-        clf()
-        plot(loglikes, linewidth=2)
-        scatter(Psi_reinits, [loglikes[k] for k in Psi_reinits], label='$Psi$ reinit.')
-        ylabel('log-likelihood')
-        xlabel('iteration')
-        savefig('%s/loglike_trace.png' % (prefix), dpi=args.dpi)
+        if not args.justplot:
+            figure(3)
+            clf()
+            plot(loglikes, linewidth=2)
+            scatter(Psi_reinits, [loglikes[k] for k in Psi_reinits], label='$Psi$ reinit.')
+            ylabel('log-likelihood')
+            xlabel('iteration')
+            savefig('%s/loglike_trace.png' % (prefix), dpi=args.dpi)
 
         # Individual plots for expected reactivities for medoid structures
         for s in maxmedoids:

@@ -1123,7 +1123,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     I_W[j,s] += dot(Psi_inv_vec, E_ddT[s,sp,:])
             """
         I_W[I_W == 0] = 1e-100
-        return 10*sqrt(1/I_W)
+        return 30*sqrt(1/I_W)
 
     def _E_d_c_j(self, E_d, E_c, j, contact_sites):
         E_d_c_j = mat(zeros(E_d.shape))

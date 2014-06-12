@@ -17,6 +17,7 @@ import pdb
 import inspect
 import pymc
 import joblib
+import sys
 import map_analysis_utils as utils
 import rdatkit.secondary_structure as ss
 from rdatkit import mapping
@@ -221,6 +222,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         self.lam_weights = lam_weights
         self.lam_mut = lam_mut
         self.lam_ridge = lam_ridge
+        self.logpriors = 0
         
         self.use_motif_decomposition = False
 
@@ -525,10 +527,19 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         print 'Solving MAP for E-step (hard EM) for sequence position %s' % idx
         ncontacts = 0
         # No Lapacian priors here, we use exponential (for hidden reactivities) and Gaussian (i.e. 2-norm) for contacts for easier calculations
-        contact_prior_factor = 1/1.5
+        contact_prior_factor = 1/2.
+        contact_prior_loc = 0.5
         prior_factors = {}
+        prior_factors['u'] = 0.25
+        prior_factors['p'] = 50.5
+        contact_prior_factor = 1/2.
+        contact_prior_loc = 0.5
         prior_factors['u'] = 0.5
         prior_factors['p'] = 7.5
+        # These are the true priors from the RMDB
+        prior_factors['u'] = 2.0
+        prior_factors['p'] = 5.5
+        #
         nmeas = W.shape[0]
         nstructs = len(struct_types[0])
         contact_idx_dict = {}
@@ -542,6 +553,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             # Some helper functions to make the code more compact
             def motifidx(midx):
                 return self.pos_motif_map[(seq_indices[idx], motif_idx_dict[midx])]
+
+            def contact_motifidx(midx, j):
+                return [m for m in motifidx(midx) if contact_sites[m][j, idx]]
 
             def check_contact_site(midx, j):
                 for m in motifidx(midx):
@@ -606,10 +620,10 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         else:
                             A[p,s] = W[j,s]*W[j,s2]
             for s in xrange(nstruct_elems):
-                for m in motifidx(s):
-                    if struct_types[idx][m] != struct_types[idx][motifidx(s)[0]]:
-                        raise ValueError('MOTIF DECOMPOSITION FAILED! STRUCTURES IN POSITION %s HAVE DIFFERENT STATES!!! %s' % (idx, struct_types[idx]))
                 if self.use_motif_decomposition:
+                    for m in motifidx(s):
+                        if struct_types[idx][m] != struct_types[idx][motifidx(s)[0]]:
+                            raise ValueError('MOTIF DECOMPOSITION FAILED! STRUCTURES IN POSITION %s HAVE DIFFERENT STATES!!! %s' % (idx, struct_types[idx]))
                     b[s] = -prior_factors[struct_types[idx][motifidx(s)[0]]]/Psi_inv[0,0]
                     for j in xrange(nmeas):
                         b[s] += W[j,motifidx(s)].sum()*data[j,idx]
@@ -623,15 +637,15 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         if self.use_motif_decomposition:
                             if check_contact_site(s, j):
                                 if p < nstruct_elems:
-                                    A[p, contact_idx_dict[(j,s)]] = W[j,motifidx(p)].sum()
+                                    A[p, contact_idx_dict[(j,s)]] = W[j,contact_motifidx(p, j)].sum()
                                 else:
                                     j2, s2 = contact_idx_dict[p]
                                     if j == j2:
                                         #A[p,contact_idx_dict[(j,s)]] = W[j,s]
                                         if s == s2:
-                                            A[p,contact_idx_dict[(j,s)]] = W[j,motifidx(s)].sum()**2 + (contact_prior)/Psi_inv[0,0]
+                                            A[p,contact_idx_dict[(j,s)]] = (W[j,contact_motifidx(s, j)].sum() + contact_prior_loc)**2 + (contact_prior)/Psi_inv[0,0]
                                         else:
-                                            A[p,contact_idx_dict[(j,s)]] = W[j2,motifidx(s2)].sum()*W[j,motifidx(s)].sum()
+                                            A[p,contact_idx_dict[(j,s)]] = W[j2,contact_motifidx(s2, j2)].sum()*W[j,contact_motifidx(s, j)].sum()
 
                         else:
                             if contact_sites[s][j, idx]:
@@ -666,7 +680,6 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         def fprime(x):
             return dot(dot(A,x) - b, A.T)
         solved = False
-        add_rand = False
         tries = 0
         while not solved:
             solved = True
@@ -696,17 +709,16 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     if x[s] <= 0.001:
                         E_d__obs[motifidx(s)] = 0.001
                     else:
-                        E_d__obs[motifidx(s)] = x[s]
-                    if add_rand:
-                        E_d__obs[motifidx(s)] += rand(len(motifidx(s)))*0.0001 
+                        if struct_types[idx][motifidx(s)[0]] == 'p' and x[s] > 0.2:
+                            E_d__obs[motifidx(s)] = 0.1
+                        else:
+                            E_d__obs[motifidx(s)] = x[s]
             else:
                 for s in xrange(nstructs):
                     if x[s] <= 0.001:
                         E_d__obs[s] = 0.001
                     else:
                         E_d__obs[s] = x[s]
-                    if add_rand:
-                        E_d__obs[s] += rand()*0.0001
 
             E_ddT__obs = dot(mat(E_d__obs).T, mat(E_d__obs))
             if (E_ddT__obs < 0).ravel().sum() > 1:
@@ -724,7 +736,6 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     print 'Blaming E_ddT__obs singularities on data similarity'
                     print 'Adding a bit of white noise to alleviate'
                     A, b = fill_matrices(A, b, contact_prior_factor)
-                    #add_rand = True
 
                    
                 print 'MAP system was not solved properly retrying with different contact priors'
@@ -901,6 +912,12 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
         return self.data_pred, self.sigma_pred
 
+    def _calculate_chi_sq(self):
+        data_pred, sigma_pred = self.calculate_data_pred()
+        chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
+        return chi_sq
+
+
     def calculate_fit_statistics(self, data_pred=None, sigma_pred=None):
         if data_pred == None or sigma_pred == None:
             data_pred, sigma_pred = self.calculate_data_pred()
@@ -1055,10 +1072,12 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     return 0.5*asarray(dot(E_ddT_Psi_inv, x) + asarray(E_d_proj).ravel())
                 bounds = [(1e-10, None)]*nstructs
                 #sol = optimize.fmin_l_bfgs_b(quadfun, W_initvals[j,:], fprime=quadfunprime, bounds=bounds)[0]
-                sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(0.5, (nstructs, 1))})['x'])
+                sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(W_initvals[j,:])})['x'])
+                #sol = array(solvers.qp(P, p, Gc, h, A, b, None, {'x':cvxmat(0.5, (nstructs, 1))})['x'])
                 #sol = array(solvers.qp(P, p, Gc, h, A, b)['x'])
                 
                 sol[sol <= 0] = 1e-10
+                sol = sol/sol.sum()
                 return sol.T
 
             if self.njobs != None:
@@ -1123,7 +1142,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     I_W[j,s] += dot(Psi_inv_vec, E_ddT[s,sp,:])
             """
         I_W[I_W == 0] = 1e-100
-        return 30*sqrt(1/I_W)
+        return sqrt(1/I_W)
 
     def _E_d_c_j(self, E_d, E_c, j, contact_sites):
         E_d_c_j = mat(zeros(E_d.shape))
@@ -1296,11 +1315,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         Psi_opt = Psi
         W_opt = W
         E_d_opt = E_d
+        E_c_opt = E_c
         sigma_d_opt = sigma_d
         E_ddT_opt = E_ddT
         max_loglike = old_loglike
         loglikes = []
         Psi_reinits = []
+        bppm_prev = utils.bpp_matrix_from_structures(self._origstructures, W[self.wt_indices[0],:])
         adaptive_factor = 1
 
         t = 0
@@ -1389,7 +1410,13 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             W_new[W_new < 0] = 1e-10
             for j in xrange(nmeas):
                 W_new[j,:] /= W_new[j,:].sum()
+            
+            # Update stopping criterion
+            bppm_new = utils.bpp_matrix_from_structures(self._origstructures, W_new[self.wt_indices[0],:])
+            currdiff = abs(bppm_prev - bppm_new).max()
+            bppm_prev = bppm_new
             W = W_new
+
             # Now get covariance matrix
             data_pred = zeros([W.shape[0], E_d.shape[1]])
 
@@ -1477,11 +1504,17 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             if not didpostmodel:
                 print t
                 t += 1
-            loglikes.append(asscalar(loglike))
+            #loglikes.append(asscalar(loglike))
+            loglikes.append(currdiff)
+            #self.W, self.E_d, self.E_c, self.Psi = W, E_d, E_c, Psi
+            #chi_sq = self._calculate_chi_sq()
+            #loglikes.append(asscalar(chi_sq))
+            if currdiff < 0.05:
+                break
             if base_loglike is None and max_iterations != 1:
                 base_loglike = loglike
             else:
-                if True and loglike > max_loglike or max_iterations == 1:
+                if True: #loglike > max_loglike or max_iterations == 1:
                     max_loglike = loglike
                     self.logpriors = logpriors
                     W_opt = W.copy()
@@ -1708,3 +1741,63 @@ class FullBayesAnalysis(MappingAnalysisMethod):
             pymc.Matplot.plot(mc, path='.')
         mc.db.close()
         return self.Psi_trace, self.d_calc_trace, self.free_energies_perturbed_trace, self.Weights_trace, self.M_trace, self.D_trace
+
+
+class MCMappingAnalysis(FAMappingAnalysis):
+
+    def __init__(self, *args, **kwargs):
+        FAMappingAnalysis.__init__(self, *args, **kwargs)
+        self.bppms = []
+        for seq in self.sequences:
+            self.bppms.append(zeros([len(seq), len(seq)]))
+
+    def simulate(self, nsamples, **kwargs):
+        nmeas = self.data.shape[0]
+        counts = [0.]*nmeas
+        nfactors = 2
+        all_structures = []
+        for i in xrange(nsamples):
+            print 'Sampling %s' % i
+            # Choose sequence to sample from
+            sequence = choice(self.sequences)
+            struct = ss.sample(sequence, nstructs=1)[0][0]
+            all_structures.append(struct.dbn)
+            print 'Structure %s' % struct.dbn
+            bps = struct.base_pairs()
+            self.set_structures([struct.dbn] + ['a'*len(struct) for x in xrange(nfactors)])
+            self.energies = ones([nmeas, nfactors + 1])
+            sys.stdout = MockPrint()
+            sys.stderr = MockPrint()
+            _, W, _, _, _, _, _, _, _, _ = self.analyze(**kwargs)
+            sys.stdout = sys.__stdout__
+            sys.stderr = sys.__stderr__
+            # Accept/reject structure depending its weight
+            for j in xrange(nmeas):
+                if rand() < W[j,0]:
+                    if j == 0:
+                        print 'Accept! (weight %s)' % W[j,0]
+                    for b1, b2 in bps:
+                        self.bppms[j][b1, b2] += 1.
+                    counts[j] += 1.
+                else:
+                    if j == 0:
+                        print 'Reject! (weight %s)' % W[j,0]
+        for j in xrange(nmeas):
+            self.bppms[j] /= counts[j]
+        print 'Done, getting initial bppms'
+        energies = utils.get_free_energy_matrix(all_structures, self.sequences)
+        W0 = utils.calculate_weights(energies)
+        for j in xrange(nmeas):
+            bppm = utils.bpp_matrix_from_structures(all_structures, W0[j,:])
+            for k in xrange(bppm.shape[0]):
+                for l in xrange(bppm.shape[1]):
+                    if bppm[k,l] != 0:
+                        self.bppms[j][l,k] = bppm[k,l]
+
+            
+class MockPrint(object):
+    def write(self, s):
+        pass
+
+
+        

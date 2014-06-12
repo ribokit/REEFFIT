@@ -16,9 +16,13 @@
 from matplotlib.pylab import *
 import matplotlib.pylab as pl
 import matplotlib
+from matplotlib.colors import rgb2hex
+import rdatkit.secondary_structure as ss
+from rdatkit.view import VARNA
 from matplotlib.patches import Rectangle
 import map_analysis_utils as utils
 import pdb
+import os
 
 STRUCTURE_COLORS = [get_cmap('Paired')(i*50) for i in xrange(100)]
 def plot_mutxpos_image(d, sequence, seqpos, offset, mut_labels, cmap=get_cmap('Greys'), vmin=0, vmax=None, missed_indices=None, contact_sites=None, structure_colors=STRUCTURE_COLORS, weights=None, aspect='auto'):
@@ -108,6 +112,7 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    return _W, _W_err, _W_ref
 
 def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, weights=None, names=None):
     all_struct_vecs = []
@@ -189,4 +194,30 @@ def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offs
     colorbar()
     xticks(r, r + offset + 1, rotation=90)
     yticks(r, r + offset + 1)
+
+def make_struct_figs(structures, sequence, offset, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
+    options = {'drawBases':False, 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset}
+    if indices == None:
+        indices = range(len(structures))
+    for i, s in enumerate(structures):
+        print s
+        options['bp'] = rgb2hex(STRUCTURE_COLORS[i])
+        varna = VARNA(sequences=[sequence], structures=[ss.SecondaryStructure(dbn=s)])
+        if base_annotations == None:
+            CMD = varna.render(output=fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
+        else:
+            varna.annotation_font_size = 13
+            varna.annotation_color = annotation_color
+            if helix_fractions == None:
+                helix_frac_annotations = ''
+                base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function)
+            else:
+                helix_frac_annotations = varna._get_base_annotation_string([helix_fractions[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0)
+                #varna.annotation_color = '#0033CC'
+                #base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0, base_offset=-2)
+            options['annotations'] = helix_frac_annotations.strip('"')
+            #options['annotations'] += base_weight_annotations.strip('"')
+            CMD = varna.render(output=fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
+        print CMD
+        os.system(CMD)
 

@@ -17,10 +17,7 @@ import argparse
 import pdb
 import matplotlib
 matplotlib.use('Agg')
-from matplotlib.colors import rgb2hex
 import os
-import rdatkit.secondary_structure as ss
-from rdatkit.view import VARNA
 import pickle
 from matplotlib.pylab import *
 from rdatkit.datahandlers import RDATFile
@@ -48,6 +45,7 @@ parser.add_argument('--clusterfile', default=None, type=argparse.FileType('r'), 
 parser.add_argument('--medoidfile', default=None, type=argparse.FileType('r'), help='File specifying the medoid structures of each cluster.')
 parser.add_argument('--structset', default=None, type=str, help='Subset of structures in the specified structfile to use in the analysis. Each subset is identified by a "header" specified after a hash (#) preceding the set of structures. This option will search all headers for structset and analyze the data with those structures. Used in worker mode.')
 parser.add_argument('--structlabelfile', default=None, type=argparse.FileType('r'), help='File specifying labels (names) for the structures.')
+parser.add_argument('--mode', default='factor', type=str)
 
 # Pre-processing options
 parser.add_argument('--cutoff', default=0, type=int, help='Number of data points and nucleotides to cut off from the beginning and end of the data and sequences: these will not be used in the analysis. Useful to avoid saturated "outliers" in the data.')
@@ -64,7 +62,7 @@ parser.add_argument('--ntasks', type=int, default=100, help='Number of tasks (cr
 
 # Model selection options
 parser.add_argument('--modelselect', type=str, default=None, help='Model selection mode. Can be one of "sample" (recommended), "heuristic", "mc" (Monte Carlo, including MCMC).')
-parser.add_argument('--nsubopt', default=100, type=int, help='For model selection. Number of maximum suboptimal structures to take from each sequence\'s structural ensemble in the RDAT file')
+parser.add_argument('--nsubopt', default=200, type=int, help='For model selection. Number of maximum suboptimal structures to take from each sequence\'s structural ensemble in the RDAT file')
 parser.add_argument('--greedyiter', default=10, type=int, help='For heuristic model selection. Number of greedy iterations in which REEFFIT tries to add more structures to make the model better.')
 parser.add_argument('--nopriorswap', action='store_true', help='For heuristic model selection. Do not swap structure medoids in each cluster, take the default medoids found by centrality maximization')
 parser.add_argument('--nopseudoenergies', action='store_true', help='For heuristic model selection. Do not use pseudoenergies (i.e. SHAPE-directed modeling) to score the structures. Structures will be scored using regular RNAstructure energies, with no data.')
@@ -95,7 +93,7 @@ parser.add_argument('--lammut', default=5.0, type=float, help='Regularization pa
 parser.add_argument('--lamridge', default=0.2, type=float, help='Regularization parameter controlling the signal strength (smoothened sparsity) of the weights. Higher values will penalize large weights.')
 parser.add_argument('--lamfile', default=None, type=argparse.FileType('r'), help='File with results of a cross-validation run. Format is lines with cross_validation_error, lam_reacts, lam_weights; tab-delimited. Values with lowest cross_validation_error will be taken for values of lam_reacts and lam_weights [UNTESTED].')
 parser.add_argument('--decompose', action='store_true', default=False, help='Decompose structures into a set of overlapping motifs to reduce number of variables to fit.')
-parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits')
+parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits. Valid options are linear (default), exponential, and none')
 parser.add_argument('--seqindices', type=str, default=None, help='Sequence indices used in the fitting. Used mainly for bootstrapping.')
 parser.add_argument('--compilebootstrap', action='store_true', default=False, help='Compile bootstrapping results. Will locate all boot* subdirectories in outprefix and extract the weights of each bootstrap iteration and compile a summary.')
 
@@ -124,31 +122,9 @@ nwarnings = 0
 def valid(seq):
     return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
 
-def make_struct_figs(structures, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
-    options = {'drawBases':False, 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset + seqpos_start}
-    if indices == None:
-        indices = range(len(structures))
-    for i, s in enumerate(structures):
-        print s
-        options['bp'] = rgb2hex(STRUCTURE_COLORS[i])
-        varna = VARNA(sequences=[mutants[wt_idx]], structures=[ss.SecondaryStructure(dbn=remove_non_cannonical(s, mutants[0]))])
-        if base_annotations == None:
-            CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
-        else:
-            varna.annotation_font_size = 13
-            varna.annotation_color = annotation_color
-            if helix_fractions == None:
-                helix_frac_annotations = ''
-                base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function)
-            else:
-                helix_frac_annotations = varna._get_base_annotation_string([helix_fractions[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0)
-                #varna.annotation_color = '#0033CC'
-                #base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function, stype='B', helix_side=0, base_offset=-2)
-            options['annotations'] = helix_frac_annotations.strip('"')
-            #options['annotations'] += base_weight_annotations.strip('"')
-            CMD = varna.render(output=args.outprefix + fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
-        print CMD
-        os.system(CMD)
+def struct_figs(structures, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
+    cstructures = [remove_non_cannonical(s, mutants[wt_idx]) for s in structures]
+    make_struct_figs(cstructures, mutants[wt_idx], seqpos_start + offset, args.outprefix + fprefix, indices=indices, base_annotations=base_annotations, helix_function=helix_function, helix_fractions=helix_fractions, annotation_color=annotation_color)
 
 def carry_on_option_string():
     options = ''
@@ -535,8 +511,12 @@ if args.titrate != None:
 #if args.modelselect != None:
 #    #energies = get_free_energy_matrix(structures,[m[seqpos_start:seqpos_end] for m in  mutants], algorithm=args.priorweights)
 #    energies = get_free_energy_matrix(structures,[m for m in  mutants], algorithm=args.priorweights)
-if args.modelselect == None or args.modelselect == 'heuristic':
-    energies = get_free_energy_matrix(structures, mutants, algorithm=args.priorweights)
+if False and args.justplot:
+    print 'Loading energies from previous run'
+    energies = pickle.load(open('%s/energies.pickle' % args.outprefix))
+else:
+    if args.modelselect == None or args.modelselect == 'heuristic':
+        energies = get_free_energy_matrix(structures, mutants, algorithm=args.priorweights)
 if args.medoidfile:
     struct_medoids = [s.strip() for s in args.medoidfile]
     struct_medoid_indices = [-1]*len(struct_medoids)
@@ -549,6 +529,9 @@ if args.medoidfile:
                 struct_medoid_indices[i] = j
 
 fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
+if args.mode == 'mc':
+    mc = mapping_analysis.MCMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
+
 if args.decompose:
     fa.perform_motif_decomposition()
 unpaired_data, paired_data = fa.set_priors_by_rvs(SHAPE_unpaired_sample, SHAPE_paired_sample)
@@ -694,7 +677,7 @@ seqpos_iter = [seqpos_cutoff[i] for i in I]
 if args.justplot:
     print 'Loading results from previous run'
     W_fa = pickle.load(open('%s/W.pickle' % args.outprefix))
-    W_fa_std = pickle.load(open('%s/W_std.pickle' % args.outprefix))
+    W_fa_std = pickle.load(open('%s/W_std.pickle' % args.outprefix))*30.
     Psi_fa = pickle.load(open('%s/Psi.pickle' % args.outprefix))
     E_d_fa = pickle.load(open('%s/E_d.pickle' % args.outprefix))
     E_c_fa = pickle.load(open('%s/E_c.pickle' % args.outprefix))
@@ -705,7 +688,46 @@ if args.justplot:
     # TODO: THIS IS A PLACEHOLDER! Need to save the sigma_d in a pickle file and load
     sigma_d_fa = E_d_fa.copy()/2.
 else:
-    lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
+    if args.mode == 'factor':
+        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=I, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
+        corr_facs, data_pred, sigma_pred = fa.correct_scale(stype=args.scalemethod)
+        missed_indices, missed_vals = fa.calculate_missed_predictions(data_pred=data_pred)
+        chi_sq, rmsea, aic = fa.calculate_fit_statistics()
+    if args.mode == 'mc':
+        mc.simulate(100, max_iterations=args.refineiter, nsim=args.nsim, return_loglikes=True)
+        matshow(mc.bppms[0])
+        show()
+        exit()
+
+
+print 'Saving data'
+if not args.justplot:
+    if args.worker:
+        worker_dict = {'W':W_fa, 'E_d':E_d_fa, 'data_pred':data_pred, 'sigma_pred':sigma_pred, 'Psi':Psi_fa, 'data':fa.data}
+        if args.structset != None:
+            pickle.dump(worker_dict, open('%s_%s_dict.pickle' % (prefix, args.structset), 'w'))
+        else:
+            pickle.dump(worker_dict, open('%sworker_dict.pickle' % prefix, 'w'))
+        if args.seqindices != None:
+            pickle.dump(I, open('%sbootstrap_indices.pickle' % prefix, 'w'))
+    else:
+        bppm, bppm_err = bpp_matrix_from_structures(structures, W_fa[wt_idx,:], weight_err=W_fa_std[wt_idx,:], signal_to_noise_cutoff=1)
+        pickle.dump(fa.data, open('%sdata.pickle' % prefix, 'w'))
+        pickle.dump(W_fa_std, open('%sW_std.pickle' % prefix, 'w'))
+        pickle.dump(bppm, open('%sbppm_WT.pickle' % prefix, 'w'))
+        pickle.dump(bppm_err, open('%sbppm_WT_err.pickle' % prefix, 'w'))
+        pickle.dump(Psi_fa, open('%sPsi.pickle' % prefix, 'w'))
+        pickle.dump(E_c_fa, open('%sE_c.pickle' % prefix, 'w'))
+        pickle.dump(E_ddT_fa, open('%sE_ddT.pickle' % prefix, 'w'))
+        pickle.dump(M_fa, open('%sM.pickle' % prefix, 'w'))
+        pickle.dump(data_pred, open('%sdata_pred.pickle' % prefix, 'w'))
+        pickle.dump(sigma_pred, open('%ssigma_pred.pickle' % prefix, 'w'))
+        pickle.dump(sigma_d_fa, open('%ssigma_d.pickle' % prefix, 'w'))
+        pickle.dump(W_fa, open('%sW.pickle' % prefix, 'w'))
+        pickle.dump(E_d_fa, open('%sE_d.pickle' % prefix, 'w'))
+        pickle.dump(energies, open('%senergies.pickle' % prefix, 'w'))
+
+       
 
 
 # Get the most frequent medoid per structure cluster
@@ -716,10 +738,11 @@ else:
 
 # Plot the medoids using VARNA
 if not args.worker:
+    print 'Plotting structures'
     if len(structures) > MAX_STRUCTURES_PLOT:
-        make_struct_figs([structures[i] for i in maxmedoids], '', indices=maxmedoids)
+        struct_figs([structures[i] for i in maxmedoids], '', indices=maxmedoids)
     else:
-        make_struct_figs(structures, '')
+        struct_figs(structures, '')
 
 # If we used motif decomposition, plot the number of motifs used per sequence position
 if args.decompose:
@@ -751,11 +774,6 @@ print 'Selected structures were:'
 for i in selected_structures:
     print '%s %s' % (i,fa.structures[i])
 
-if not args.justplot:
-    corr_facs, data_pred, sigma_pred = fa.correct_scale(stype=args.scalemethod)
-    missed_indices, missed_vals = fa.calculate_missed_predictions(data_pred=data_pred)
-    chi_sq, rmsea, aic = fa.calculate_fit_statistics()
-
 
 if args.clusterdatafactor and not args.worker:
 
@@ -777,27 +795,6 @@ if args.clusterdatafactor and not args.worker:
         CI = [idx for idx, cidx in enumerate(fa.data_clusters) if cidx == cid]
         plot_mutxpos_image(fa.data_cutoff[CI,I], sequence, seqpos_iter, offset, [mut_labels[k] for k in CI])
         savefig('%s/cluster_%s_real_data.png' % (prefix, cid), dpi=100)
-
-print 'Saving data'
-if args.worker:
-    worker_dict = {'W':W_fa, 'E_d':E_d_fa, 'data_pred':data_pred, 'sigma_pred':sigma_pred, 'Psi':Psi_fa, 'data':fa.data}
-    if args.structset != None:
-        pickle.dump(worker_dict, open('%s_%s_dict.pickle' % (prefix, args.structset), 'w'))
-    else:
-        pickle.dump(worker_dict, open('%sworker_dict.pickle' % prefix, 'w'))
-    if args.seqindices != None:
-        pickle.dump(I, open('%sbootstrap_indices.pickle' % prefix, 'w'))
-else:
-    pickle.dump(fa.data, open('%sdata.pickle' % prefix, 'w'))
-    pickle.dump(W_fa_std, open('%sW_std.pickle' % prefix, 'w'))
-    pickle.dump(Psi_fa, open('%sPsi.pickle' % prefix, 'w'))
-    pickle.dump(E_c_fa, open('%sE_c.pickle' % prefix, 'w'))
-    pickle.dump(E_ddT_fa, open('%sE_ddT.pickle' % prefix, 'w'))
-    pickle.dump(M_fa, open('%sM.pickle' % prefix, 'w'))
-    pickle.dump(data_pred, open('%sdata_pred.pickle' % prefix, 'w'))
-    pickle.dump(sigma_pred, open('%ssigma_pred.pickle' % prefix, 'w'))
-    pickle.dump(W_fa, open('%sW.pickle' % prefix, 'w'))
-    pickle.dump(E_d_fa, open('%sE_d.pickle' % prefix, 'w'))
 
 
 if args.worker:
@@ -833,6 +830,21 @@ if args.worker:
 
     print 'Worker results were appended to %s' % report.name
 else:
+    print 'Structure weight report by mutant'
+    for j in xrange(W_fa.shape[0]):
+        print 'Report for %s' % mut_labels[j]
+        struct_report = open('%s/structure_weights%s_%s.txt' % (prefix, j, mut_labels[j]),'w')
+        struct_report.write('Structure index\tStructure\tCluster medoid\tWeight\tWeight error (stdev)\n')
+        for i in xrange(W_fa.shape[1]):
+            if W_fa[j,i] >= 0.05:
+                for structs in assignments.values():
+                    if i in structs:
+                        for m in maxmedoids:
+                            if m in structs:
+                                break
+                        break
+                struct_report.write('%s\t%s\t%s\t%s\t%s\n' % (i, fa.structures[i], fa.structures[m], W_fa[j,i], W_fa_std[j,i]))
+        struct_report.close()
     if not args.justplot:
         print 'Printing report'
         report = open('%s/report.txt' % prefix,'w')
@@ -849,7 +861,11 @@ else:
         report.write('RMSEA: %s\n' % rmsea)
         report.write('AIC: %s\n' % aic)
         report.close()
+
+
     r = arange(data_cutoff.shape[1])
+
+    print 'Plotting'
 
     # Structure cluster landscape plot for wild type
     if args.nostructlabels:
@@ -863,12 +879,11 @@ else:
     PCA_structure_plot(structures, assignments, maxmedoids, weights=W_fa[wt_idx,:], names=struct_labels)
     savefig('%s/pca_landscape_plot_WT.png' % prefix, dpi=args.dpi)
 
-    for widx in wt_indices:
-
+    for j in xrange(W_fa.shape[0]):
         figure(1)
         clf()
-        bpp_matrix_plot(structures, W_fa[widx,:], ref_weights=W_0[widx,:], weight_err=W_fa_std[wt_idx,:], offset=offset)
-        savefig('%s/bppm_plot_WT%s.png' % (prefix, widx), dpi=args.dpi)
+        bpp_matrix_plot(structures, W_fa[j,:], ref_weights=W_0[j,:], weight_err=W_fa_std[j,:], offset=offset)
+        savefig('%s/bppm_plot_%s_%s.png' % (prefix, j, mut_labels[j]), dpi=args.dpi)
 
     for i in arange(0, data_cutoff.shape[0], args.splitplots):
         if i == 0 and args.splitplots == data_cutoff.shape[0]:
@@ -913,7 +928,12 @@ else:
         clf()
         ax = subplot(111)
         if len(structures) > MAX_STRUCTURES_PLOT:
-            weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], assignments=assignments, medoids=maxmedoids)
+            medoid_weights = []
+            medoid_weights_std = []
+            W_collapsed, W_collapsed_std, _ = weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], assignments=assignments, medoids=maxmedoids)
+            
+            pickle.dump(W_collapsed, open('%sW_collapsed.pickle' % args.outprefix, 'w'))
+            pickle.dump(W_collapsed_std, open('%sW_collapsed_std.pickle' % args.outprefix, 'w'))
             savefig('%s/weights_by_mutant%s.png' % (prefix,isuffix), dpi=args.dpi)
             # Plot weights by mutant by structure, compared to initial weight values
             for j in maxmedoids:
@@ -924,6 +944,9 @@ else:
                 for structs in assignments.values():
                     if j in structs:
                         overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, W_fa[wt_idx, structs].sum(), sqrt((W_fa_std[wt_idx, structs]**2).sum())))
+                        medoid_weights.append(W_fa[wt_idx, structs].sum())
+                        medoid_weights_std.append(sqrt((W_fa_std[wt_idx, structs]**2).sum()))
+            overall_wt_fractions_file.write('# This is a landscape category %s RNA\n' % classify([structures[m] for m in maxmedoids], array(medoid_weights)))
 
 
         else:
@@ -936,8 +959,7 @@ else:
                 weights_by_mutant_plot(W_fa[i:i+args.splitplots,:], W_fa_std[i:i+args.splitplots,:], [mut_labels[k] for k in xrange(i, i+args.splitplots)], W_ref=W_0[i:i+args.splitplots,:], idx=j)
                 savefig('%s/weights_by_mutant_structure%s_%s.png' % (prefix, isuffix, j), dpi=100)
                 overall_wt_fractions_file.write('%s\t%s\t%s\n' % (j, W_fa[wt_idx, j], W_fa_std[wt_idx, j]))
-
-
+            overall_wt_fractions_file.write('# This is a landscape category %s RNA\n' % classify(structures, W_fa[wt_idx,:]))
 
         # Plot Log-likelihood trace
         if not args.justplot:
@@ -945,12 +967,16 @@ else:
             clf()
             plot(loglikes, linewidth=2)
             scatter(Psi_reinits, [loglikes[k] for k in Psi_reinits], label='$Psi$ reinit.')
-            ylabel('log-likelihood')
+            ylabel('Convergence value')
             xlabel('iteration')
             savefig('%s/loglike_trace.png' % (prefix), dpi=args.dpi)
 
-        # Individual plots for expected reactivities for medoid structures
-        for s in maxmedoids:
+        # Individual plots for expected reactivities
+        if len(structures) > MAX_STRUCTURES_PLOT:
+            structiter = maxmedoids
+        else:
+            structiter = xrange(len(structures))
+        for s in structiter:
             f = figure(2)
             f.set_size_inches(15, 5)
             clf()
@@ -978,15 +1004,17 @@ else:
 
         if args.detailedplots:
             # Plot contact maps
-            for s in xrange(len(structures)):
+            for s in maxmedoids:
                 figure(1)
                 clf()
                 imshow(E_c_fa[i:i+args.splitplots,s,:] - fa.calculate_data_pred(no_contacts=True)[0], aspect='auto', interpolation='nearest')
                 xticks(range(len(seqpos_iter)), ['%s%s' % (pos, sequence[pos - offset - 1]) for pos in seqpos_iter], fontsize='xx-small', rotation=90)
                 ml = [mut_labels[k] for k in xrange(i, i+args.splitplots)]
                 yticks(range(len(ml)), ml, fontsize='xx-small')
+                colorbar()
                 savefig('%s/E_c_%s_structure_%s.png' % (prefix,isuffix,s), dpi=args.dpi)
             # Invidual plots for expected reactivities
+            """
             for i, s in enumerate(selected_structures):
                 f = figure(2)
                 f.set_size_inches(15, 5)
@@ -998,6 +1026,7 @@ else:
                     expected_reactivity_plot(E_d_fa[i,:], fa.structures[s], yerr=sigma_d_fa[i,:]/sqrt(args.nsim), seq_indices=I)
                 xticks(r[0:len(r):5] + 1, seqpos_iter[0:len(seqpos_iter):5], rotation=90)
                 savefig('%s/exp_react_struct_%s.png' % (prefix, i), dpi=args.dpi)
+            """
 
 
             # Plot prior histograms
@@ -1027,6 +1056,8 @@ else:
                 ylim(0,4)
                 legend()
                 savefig('%s/data_vs_predicted_%s_%s.png' % (prefix, i, mut_labels[i]))
+
+exit()
 if args.compilebootstrap:
     print 'Compiling bootstrap results'
 
@@ -1088,9 +1119,9 @@ if args.compilebootstrap:
                 return x
             else:
                 return y
-        make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', indices=maxmedoids, base_annotations=base_annotations, helix_fractions=helix_fractions, helix_function=helix_function)
-        #make_struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
-        #make_struct_figs([structures[m] for m in maxmedoids], 'cluster_', base_annotations=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))), annotation_color='#0033CC')
+        struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', indices=maxmedoids, base_annotations=base_annotations, helix_fractions=helix_fractions, helix_function=helix_function)
+        #struct_figs([structures[m] for m in maxmedoids], 'bootstrap_', base_annotations=base_annotations, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))))
+        #struct_figs([structures[m] for m in maxmedoids], 'cluster_', base_annotations=helix_fractions, helix_function=lambda x,y: '%3.2f%%' % max(float(x.strip('%')),float(y.strip('%'))), annotation_color='#0033CC')
 
 
     fa.analyze(max_iterations=1, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, soft_em=args.softem, W0=Wcompile_mean)
@@ -1207,9 +1238,9 @@ for s in structures:
 
 if not args.worker and args.postmodel:
     if len(structures) > MAX_STRUCTURES_PLOT:
-        make_struct_figs([structures[i] for i in maxmedoids], 'postmodel_', indices=maxmedoids)
+        struct_figs([structures[i] for i in maxmedoids], 'postmodel_', indices=maxmedoids)
     else:
-        make_struct_figs(structures, 'postmodel_')
-    make_struct_figs(structures, 'postmodel_')
+        struct_figs(structures, 'postmodel_')
+    struct_figs(structures, 'postmodel_')
 print 'Done!'
 print '\a'

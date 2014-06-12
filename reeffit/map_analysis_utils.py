@@ -21,7 +21,7 @@ from scipy.stats import stats
 from scipy.spatial.distance import squareform
 from collections import defaultdict
 from bitarray import bitarray
-import rdatkit.secondary_structure
+import rdatkit.secondary_structure as ss
 import scipy.cluster.hierarchy as hcluster
 
 k = 0.0019872041
@@ -96,7 +96,7 @@ def get_struct_types(structures, cutoff=-1):
 def get_structure_distance_matrix(structures, struct_types, distance='mutinf'):
     nstructs = len(struct_types[0])
     if distance == 'basepair':
-        structures_bp = [rdatkit.secondary_structure.SecondaryStructure(dbn=struct).base_pairs() for struct in structures]
+        structures_bp = [ss.SecondaryStructure(dbn=struct).base_pairs() for struct in structures]
     D = zeros([nstructs, nstructs])
     for i in xrange(nstructs):
         st1 = [s[i] for s in struct_types]
@@ -288,7 +288,7 @@ def mock_data(sequences, structures=None, energy_mu=0.5, energy_sigma=0.5, obs_s
 
             bp_dicts = []
             for s, struct in enumerate(structures):
-                bp_dicts.append(rdatkit.secondary_structure.SecondaryStructure(dbn=struct).base_pair_dict())
+                bp_dicts.append(ss.SecondaryStructure(dbn=struct).base_pair_dict())
             for j in xrange(data.shape[0]):
                 for k in xrange(-(c_size-1)/2, (c_size-1)/2+1):
                     for s in xrange(len(structures)):
@@ -323,7 +323,7 @@ def mock_data(sequences, structures=None, energy_mu=0.5, energy_sigma=0.5, obs_s
     else:
         data = zeros(len(sequences), len(sequences[0]))
         for j, seq in enumerate(sequences):
-            bppm = rdatkit.secondary_structure.partition(sequence)
+            bppm = ss.partition(sequence)
             unpaired_probs = 1 - bppm.sum(axis=0)
             for i, up in enumerate(unpaired_probs):
                 data[j,i] = up*unpaired_sampling() + (1-up)*paired_sampling()
@@ -332,7 +332,7 @@ def mock_data(sequences, structures=None, energy_mu=0.5, energy_sigma=0.5, obs_s
 
 def remove_non_cannonical(structure, sequence):
     cannonical_bp = [('G','C'), ('C','G'), ('G','U'), ('U','G'), ('A','U'), ('U','A')]
-    bp_dict = rdatkit.secondary_structure.SecondaryStructure(dbn=structure).base_pair_dict()
+    bp_dict = ss.SecondaryStructure(dbn=structure).base_pair_dict()
     res_struct = ['.']*len(sequence)
     for n1, n2 in bp_dict.iteritems():
         if (sequence[n1], sequence[n2]) in cannonical_bp:
@@ -348,14 +348,17 @@ def remove_non_cannonical(structure, sequence):
 
 def get_free_energy_matrix(structures, sequences, algorithm='rnastructure'):
     energies = zeros([len(sequences), len(structures)])
-    for j, seq in enumerate(sequences):
-        print 'Calculating structure energies for sequence %s: %s' % (j, seq)
-        energies[j,:] = array(rdatkit.secondary_structure.get_structure_energies(seq, [rdatkit.secondary_structure.SecondaryStructure(dbn=remove_non_cannonical(s, seq)) for s in structures], algorithm=algorithm))
-	minenergy = energies[j,:].min()
-	#energies[j,:] -= minenergy
-	for i in xrange(len(structures)):
-	    if energies[j,i] > 200:
-		energies[j,i] = 200
+    if algorithm == 'uniform':
+        energies += 1
+    else:
+        for j, seq in enumerate(sequences):
+            print 'Calculating structure energies for sequence %s: %s' % (j, seq)
+            energies[j,:] = array(ss.get_structure_energies(seq, [ss.SecondaryStructure(dbn=remove_non_cannonical(s, seq)) for s in structures], algorithm=algorithm))
+            minenergy = energies[j,:].min()
+            #energies[j,:] -= minenergy
+            for i in xrange(len(structures)):
+                if energies[j,i] > 200:
+                    energies[j,i] = 200
     return energies
 
 def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=None):
@@ -366,7 +369,7 @@ def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=No
     else:
         mutpos_cutoff = mutpos
     for s, struct in enumerate(structures):
-        bp_dicts.append(rdatkit.secondary_structure.SecondaryStructure(dbn=struct).base_pair_dict())
+        bp_dicts.append(ss.SecondaryStructure(dbn=struct).base_pair_dict())
     contact_sites = {}
     for s in xrange(nstructs):
         contact_sites[s] = zeros([nmeas, npos])
@@ -388,7 +391,7 @@ def get_contact_sites(structures, mutpos, nmeas, npos, c_size, restrict_range=No
 
 def get_minimal_overlapping_motif_decomposition(structures, bytype=False, offset=0):
     if type(structures[0]) == str:
-        struct_objs = [rdatkit.secondary_structure.SecondaryStructure(dbn=s) for s in structures]
+        struct_objs = [ss.SecondaryStructure(dbn=s) for s in structures]
     else:
         struct_objs = structures
 
@@ -530,13 +533,17 @@ def get_minimal_overlapping_motif_decomposition(structures, bytype=False, offset
             idx = j
     """
 
-def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_noise_cutoff=0):
+def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_noise_cutoff=0, flip=False):
     npos = len(structures[0])
     bppm = zeros([npos, npos])
     if weight_err != None:
         bppm_err = zeros([npos, npos])
     for i, s in enumerate(structures):
-        for n1, n2 in rdatkit.secondary_structure.SecondaryStructure(dbn=s).base_pairs():
+        for n1, n2 in ss.SecondaryStructure(dbn=s).base_pairs():
+            if flip:
+                ntmp = n1
+                n2 = n1
+                n1 = ntmp
             bppm[n1,n2] += weights[i]
             if weight_err != None:
                 bppm_err[n1,n2] += weight_err[i]**2
@@ -549,5 +556,74 @@ def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_n
         return bppm, bppm_err
     else:
         return bppm
+
+def compare_by_register_shifts(s1, s2):
+    s1bp = ss.SecondaryStructure(dbn=s1).base_pairs()
+    s2bp = ss.SecondaryStructure(dbn=s2).base_pairs()
+    nsharedbp = 0
+    for bp1 in s1bp:
+        for bp2 in s2bp:
+            if (bp1[0] == bp2[0] and bp1[1] == bp2[1]) or\
+               (bp1[0] == bp2[0]-1 and bp1[1] == bp2[1]) or\
+               (bp1[0] == bp2[0]+1 and bp1[1] == bp2[1]) or\
+               (bp1[0] == bp2[0]+1 and bp1[1] == bp2[1]-1) or\
+               (bp1[0] == bp2[0]+1 and bp1[1] == bp2[1]+1):
+                   nsharedbp += 0.5
+    c = 0.8
+    if nsharedbp > c*len(s1bp) and nsharedbp > c*len(s2bp):
+        return True
+    else:
+        return False
+
+def _collapse_by_similarity(structs):
+    nstats = len(structs)
+    visited = []
+    state_dict = defaultdict(list)
+    for i, s1 in enumerate(structs):
+        if i in visited:
+            continue
+        for j in xrange(i+1, len(structs)):
+            if j in visited:
+                continue
+            s2 = structs[j]
+            if compare_by_register_shifts(s1, s2):
+                state_dict[i].append(j)
+                nstats -= 1
+                visited.append(j)
+    lone_structs = defaultdict(list)
+    for i in xrange(len(structs)):
+        found = False
+        for k, v in state_dict.iteritems():
+            if i in v or i == k:
+                found = True
+        if not found:
+            lone_structs[i] = []
+    state_dict.update(lone_structs)
+    return state_dict
+
+def combine_weights(w, state_dict):
+    new_w = []
+    for k, v in state_dict.iteritems():
+        weight = w.ravel()[k]
+        for s in v:
+            weight += w.ravel()[s]
+        new_w.append(weight)
+    return array([new_w])
+
+def classify(structures, weights):
+    cw = combine_weights(weights, _collapse_by_similarity(structures))
+    cat = 'III'
+    for weight in cw.ravel():
+        if weight > 0.96:
+            return 'I'
+        if weight > 0.5:
+            cat = 'II'
+    return cat
+
+def wentropy(weights):
+    if len(weights.ravel()) == 1:
+        return 0.
+    else:
+        return sum([-p*log(p) for p in weights.ravel() if p > 0])
 
 

@@ -21,7 +21,8 @@ import os
 import pickle
 from matplotlib.pylab import *
 from rdatkit.datahandlers import RDATFile
-from rdatkit import mapping
+import rdatkit.secondary_structure as ss
+from rdatkit.mapping import MappingData
 from plot_utils import *
 from map_analysis_utils import *
 import map_analysis_utils
@@ -75,6 +76,7 @@ parser.add_argument('--maxlamweights', type=int, default=10, help='For cross-val
 parser.add_argument('--msmaxsamples', type=int, default=inf, help='For MC model selection. Maximum number of structures per sample in MC simulation')
 parser.add_argument('--interpreter', type=str, default='python', help='For MC model selection. Python interpreter to use for the worker files')
 parser.add_argument('--nostructlabels', default=False, action='store_true', help='No labels (names) for the structures in PCA plot.')
+parser.add_argument('--nstructs', default=None, type=int, help='If this parameter is set to a positive integer, that number of lowest energy structures of the selected structures will be used for fitting the ensemble. This is useful for cross-validating number of structures. Note that setting this option will deactivate motif decomposition.')
 
 # Fitting options
 parser.add_argument('--nsim', default=1000, type=int, help='Number of simulations used for each E-step when performing soft EM.')
@@ -92,7 +94,7 @@ parser.add_argument('--lamweights', default=0.0, type=float, help='Regularizatio
 parser.add_argument('--lammut', default=5.0, type=float, help='Regularization parameter controlling similarities of delta delta Gs of weights of wild type and mutants to the ones calculated by the secondary structure algorithm (e.g. RNAstructure or ViennaRNA). Higher values will force delta delta G values between wild type and mutant structures to be similar.')
 parser.add_argument('--lamridge', default=0.2, type=float, help='Regularization parameter controlling the signal strength (smoothened sparsity) of the weights. Higher values will penalize large weights.')
 parser.add_argument('--lamfile', default=None, type=argparse.FileType('r'), help='File with results of a cross-validation run. Format is lines with cross_validation_error, lam_reacts, lam_weights; tab-delimited. Values with lowest cross_validation_error will be taken for values of lam_reacts and lam_weights [UNTESTED].')
-parser.add_argument('--decompose', action='store_true', default=False, help='Decompose structures into a set of overlapping motifs to reduce number of variables to fit.')
+parser.add_argument('--decompose', type=str, default='element', help='Decompose structures into a set of overlapping motifs to reduce number of variables to fit. Possible values include "element, "motif", or "none".')
 parser.add_argument('--scalemethod', type=str, default='linear', help='Scaling method to perform after fits. Valid options are linear (default), exponential, and none')
 parser.add_argument('--seqindices', type=str, default=None, help='Sequence indices used in the fitting. Used mainly for bootstrapping.')
 parser.add_argument('--compilebootstrap', action='store_true', default=False, help='Compile bootstrapping results. Will locate all boot* subdirectories in outprefix and extract the weights of each bootstrap iteration and compile a summary.')
@@ -106,7 +108,7 @@ parser.add_argument('--dpi', type=int, default=200, help='DPI resolution for plo
 args = parser.parse_args()
 
 # Global variables
-model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic', 'cv':'Cross-validation', 'sample':'Suboptimal structure sampling'}
+model_selection_names = {'mc':'Monte Carlo (includes MCMC)', 'heuristic': 'Heuristic', 'cv':'Cross-validation', 'sample':'Suboptimal structure sampling', 'mapdirected':'Mapping-directed modelling'}
 worker_file_formats = ['qsub', 'sh']
 carry_on_options = ['nsim', 'refineiter', 'structest', 'clusterdatafactor',
         'decompose', 'cutoff', 'start', 'end', 'softem', 'energydelta', 'titrate',
@@ -118,17 +120,21 @@ rdatname = args.rdatfile.name[args.rdatfile.name.rfind('/')+1:].split('_')[0]
 idxoffset = 0
 nwarnings = 0
 
+if args.crossvalidate == 'measurements':
+    args.decompose = 'none'
 # Helper functions
 def valid(seq):
     return 'G' in seq.upper() or 'C' in seq.upper() or 'A' in seq.upper() or 'U' in seq.upper()
 
 def struct_figs(structures, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
     cstructures = [remove_non_cannonical(s, mutants[wt_idx]) for s in structures]
-    make_struct_figs(cstructures, mutants[wt_idx], seqpos_start + offset, args.outprefix + fprefix, indices=indices, base_annotations=base_annotations, helix_function=helix_function, helix_fractions=helix_fractions, annotation_color=annotation_color)
+    make_struct_figs(cstructures, mutants[wt_idx], offset, args.outprefix + fprefix, indices=indices, base_annotations=base_annotations, helix_function=helix_function, helix_fractions=helix_fractions, annotation_color=annotation_color)
 
-def carry_on_option_string():
+def carry_on_option_string(exclude=[]):
     options = ''
     for opt in carry_on_options:
+        if opt in exclude:
+            continue
         val = args.__dict__[opt]
         if val != None:
             if type(val) == bool:
@@ -152,7 +158,7 @@ def carry_on_option_string():
 def prepare_model_select_simulation_structure_file(idx, nsim):
     sf = open('%sstructures%s.txt' % (args.outprefix, idx), 'w')
     for i in xrange(nsim):
-        n = randint(2, min(args.msmaxsamples, len(structures)))
+        n = randint(1, min(args.msmaxsamples, len(structures)))
         sf.write('#%s\n' % i)
         sf.write('\n'.join(set(sample(structures, n))))
         if i < nsim - 1:
@@ -175,6 +181,19 @@ def prepare_cv_worker_file(idx, all_parameters):
     for i in xrange(len(all_parameters)):
         wf.write('%s %s %s --cvfold %s --%s=%s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options, args.cvfold, args.crossvalidate, all_parameters[i]))
     return wf.name
+
+def prepare_measurement_cv_worker_file(idx, struct_range):
+    wf = open('%s%s_cv_worker%s.sh' % (args.outprefix, args.crossvalidate, idx), 'w')
+    general_options = '%s %s --structfile %sall_structures.txt --worker' % (os.path.abspath(args.rdatfile.name), args.outprefix, args.outprefix)
+    general_options += carry_on_option_string()
+    for i in xrange(len(struct_range)):
+        if struct_range[i] is not None:
+            nstructs_option = '--nstructs=%s' % struct_range[i]
+        else:
+            nstructs_option = ''
+        wf.write('%s %s %s --cvfold %s %s\n' % (args.interpreter, os.environ['REEFFIT_HOME'] + '/reeffit/analyze_rdat.py ', general_options, args.cvfold, nstructs_option))
+    return wf.name
+
 
 def prepare_bootstrap_worker_file(idx, all_indices, idxoffset):
     wf = open('%sbootstrap_worker%s.sh' % (args.outprefix, idx), 'w')
@@ -214,6 +233,100 @@ def print_worker_options():
     print 'Number of samples per file %s' % args.ntasks
     print 'Worker file format is %s' % args.workerformat
 
+def perform_crossvalidation(cv_type):
+    if cv_type == 'measurements':
+        data_dim = 0
+    else:
+        data_dim = 1
+    fold_sets = [arange(i, data_cutoff.shape[data_dim], args.cvfold) for i in xrange(args.cvfold)]
+    cv_errors = []
+    data_comp = data.copy()
+    #data_comp[data_comp >= data_comp.mean()] = 1
+    for fold in xrange(args.cvfold):
+        cv_indices = [x for x in chain(*[fold_sets [i] for i in xrange(args.cvfold) if i != fold])]
+        pred_indices = fold_sets[fold]
+
+        if cv_type == 'measurements':
+            meas_indices = cv_indices
+            seq_indices = range(data.shape[1])
+            meas_pred_indices =  pred_indices
+            seq_pred_indices =  seq_indices
+        else:
+            meas_indices = range(data.shape[0])
+            seq_indices = cv_indices
+            meas_pred_indices = meas_indices
+            seq_pred_indices = pred_indices
+
+        if len(kds) > 0:
+            kds_cv = kds[meas_indices,:]
+            concentrations_cv = concentrations[meas_indices]
+        else:
+            kds_cv = kds
+            concentrations_cv = concentrations
+
+        fa_cv = mapping_analysis.FAMappingAnalysis(data[meas_indices,:], structures, mutants, mutpos=mutpos_cutoff, energies=energies[meas_indices,:], concentrations=concentrations_cv, kds=kds_cv, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge, njobs=args.njobs)
+        if args.decompose in ['element', 'motif'] or args.nstructs is None:
+            fa_cv.perform_motif_decomposition(type=args.decompose)
+        lhood_traces, W_cv, W_cv_std, Psi_cv, E_d_cv, E_c_cv, sigma_d_cv, E_ddT_cv, M_cv, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=seq_indices, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
+
+        if cv_type == 'measurements':
+            E_d0, E_ddT0, E_c0, sigma_d0 = E_d_cv, E_ddT_cv, E_c_cv, sigma_d_cv
+            Psi0 = Psi_cv
+            W0 = None
+        else:
+            E_d0, E_ddT0, E_c0, sigma_d0 = None, None, None, None
+            Psi0 = None
+            W0 = W_cv
+
+
+        if len(kds) > 0:
+            kds_cv = kds[meas_pred_indices,:]
+            concentrations_cv = concentrations[meas_pred_indices]
+        else:
+            kds_cv = kds
+            concentrations_cv = concentrations
+         
+        fa_cv = mapping_analysis.FAMappingAnalysis(data[meas_pred_indices,:], structures, mutants, mutpos=mutpos_cutoff, energies=energies[meas_pred_indices,:], concentrations=concentrations_cv, kds=kds_cv, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge, njobs=args.njobs)
+        if args.decompose in ['element', 'motif'] or args.nstructs is None:
+            fa_cv.perform_motif_decomposition(type=args.decompose)
+        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W0, E_d0=E_d0, Psi0=Psi0, E_ddT0=E_ddT0, E_c0=E_c0, sigma_d0=sigma_d0, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=seq_pred_indices, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
+
+        data_pred_cv, sigma_pred_cv = fa_cv.calculate_data_pred()
+        #data_pred_cv[data_pred_cv >= data_pred_cv.mean()] = 1
+
+        err = asarray(data_comp[meas_pred_indices,:][:, seq_pred_indices] - asarray(data_pred_cv))**2
+        """
+        print 'Max'
+        print err.max()
+        print 'Min'
+        print err.min()
+        print 'Sum'
+        print err.sum()
+        print 'Mean'
+        print err.mean()
+        pdb.set_trace()
+        figure(1)
+        plot_mutxpos_image(data_pred_cv, sequence, pred_indices, 0, mut_labels)
+        figure(2)
+        plot_mutxpos_image(data_comp[meas_pred_indices,:][:, seq_pred_indices], sequence, pred_indices, 0, mut_labels)
+        show()
+        print 'Corrected error'
+        #corr_err = array([((e - err.mean())**4)/(err.std()**2) for e in err]).mean() - 3
+        m =  median(err)
+        corr_err = err[err >= m].sum()
+        print corr_err
+        exit()
+        """
+        cv_errors.append(err.mean())
+    report = open('%s%s_cv_results.txt' % (args.outprefix, args.crossvalidate),'a')
+    if cv_type == 'measurements':
+        if args.nstructs is None:
+            report.write('%s\tfull\n' % (array(cv_errors).mean()))
+        else:
+            report.write('%s\t%s\n' % (array(cv_errors).mean(), args.nstructs))
+    else:
+        report.write('%s\t%s\n' % (array(cv_errors).mean(), '\t'.join(['%s=%s' % (k, v) for k, v in regparams.iteritems()])))
+    return report
 
 
 for rdatidx, rdatfile in enumerate([args.rdatfile] + args.addrdatfiles):
@@ -324,8 +437,6 @@ if args.clipzeros:
     data = array(data)[:,:last_seqpos]
 else:
     data = array(data)
-plot(data[0,:])
-show()
 for i in xrange(data.shape[0]):
     for j in xrange(data.shape[1]):
         if data[i,j] == 0:
@@ -361,18 +472,19 @@ else:
     mutpos_cutoff = mutpos
     seqpos_range = None
 
-if args.crossvalidate != None and not args.worker:
+if args.crossvalidate in ['lamridge', 'lammut'] and not args.worker:
     print_worker_options()
     print 'Preparing worker files for cross-validation tuning of parameter %s' % args.crossvalidate
     parameter_grid = []
     tot_num_tries = args.ntasks*args.nworkers
     param_delta = args.maxcvparam/float(tot_num_tries)
-    print param_delta
+    print 'Parameter change is: %s' % param_delta
     workerfiles = []
     for i in arange(0, args.maxcvparam, param_delta):
         parameter_grid.append(i)
     for i in xrange(args.nworkers):
         workerfiles.append(prepare_cv_worker_file(i, parameter_grid[i*args.ntasks:i*args.ntasks+args.ntasks]))
+
     write_worker_master_script(workerfiles, '%s_cv' % args.crossvalidate)
     print 'Finished preparing worker files!'
     exit()
@@ -528,12 +640,18 @@ if args.medoidfile:
             if s == sm:
                 struct_medoid_indices[i] = j
 
+if args.nstructs is not None:
+    sorted_indices = [i for i, x in sorted(enumerate(energies[wt_idx,:]), key=lambda x:x[1])]
+    energies = energies[:, sorted_indices[:args.nstructs]]
+    structures = [structures[i] for i in sorted_indices[:args.nstructs]]
+
+
 fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
 if args.mode == 'mc':
     mc = mapping_analysis.MCMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
 
-if args.decompose:
-    fa.perform_motif_decomposition()
+if args.decompose in ['element', 'motif']:
+    fa.perform_motif_decomposition(type=args.decompose)
 unpaired_data, paired_data = fa.set_priors_by_rvs(SHAPE_unpaired_sample, SHAPE_paired_sample)
 
 if args.modelselect != None:
@@ -546,6 +664,14 @@ if args.modelselect != None:
         print 'Finished preparing worker files, run them using your scheduler and them use compile_worker_results.py to compile the results'
         write_worker_master_script(workerfiles, 'mc')
         exit()
+    if args.modelselect == 'mapdirected':
+        mapstructfile = open(args.outprefix + 'map_directed_structures.txt', 'w')
+        for i, seq in enumerate(mutants):
+            md = MappingData(data=data_cutoff[i,:]*5, seqpos=[s - offset - 1 for s in seqpos_cutoff])
+            struct = ss.fold(seq, mapping_data=md)[0].dbn
+            mapstructfile.write(struct + '\n')
+        exit()
+
     if args.modelselect == 'sample':
         allstructfile = open(args.outprefix + 'all_structures.txt', 'w')
         allstructfile.write('\n'.join(structures))
@@ -583,60 +709,42 @@ if args.clusterfile:
 else:
     W_0 = calculate_weights(energies)
 
-
 fa.energies = energies
 nstructs = len(selected_structures)
 nmeas =  data_cutoff.shape[0]
 npos = data_cutoff.shape[1]
 
+if args.crossvalidate == 'measurements' and not args.worker:
+    print_worker_options()
+    print 'Preparing worker files for cross-validation on the measurements'
+    tot_num_tries = args.ntasks*args.nworkers
+    struct_range = range(1, min(len(selected_structures) + 1, tot_num_tries))
+    workerfiles = []
+    struct_range_idx = 0
+    for i in xrange(args.nworkers):
+        if struct_range_idx >= len(struct_range):
+            break
+        struct_range_i = struct_range[struct_range_idx:struct_range_idx+args.ntasks]
+        if i == 0:
+            struct_range_i += [None]
+        workerfiles.append(prepare_measurement_cv_worker_file(i,struct_range_i))
+        struct_range_idx += args.ntasks
+
+    write_worker_master_script(workerfiles, '%s_cv' % args.crossvalidate)
+    print 'Finished preparing worker files!'
+    exit()
+
+
 #If we are doing cross validation, then do the cross validation and exit
 if args.cvfold > 0:
-    print 'Performing %s-fold cross validation for parameters %s' % (args.cvfold, regparams)
-    fold_sets = [arange(i, data_cutoff.shape[1], args.cvfold) for i in xrange(args.cvfold)]
-    cv_errors = []
-    data_comp = data.copy()
-    data_comp[data_comp >= data_comp.mean()] = 1
-    for fold in xrange(args.cvfold):
-        cv_indices = [x for x in chain(*[fold_sets [i] for i in xrange(args.cvfold) if i != fold])]
-        pred_indices = fold_sets[fold]
-
-        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge, njobs=args.njobs)
-        if args.decompose:
-            fa_cv.perform_motif_decomposition()
-        lhood_traces, W_cv, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=args.refineiter, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=cv_indices, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
-
-        fa_cv = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, energies=energies, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge, njobs=args.njobs)
-        if args.decompose:
-            fa_cv.perform_motif_decomposition()
-        lhood_traces, W_fa, W_fa_std, Psi_fa, E_d_fa, E_c_fa, sigma_d_fa, E_ddT_fa, M_fa, post_structures = fa_cv.analyze(max_iterations=1, W0=W_cv, nsim=args.nsim, G_constraint=args.energydelta, cluster_data_factor=args.clusterdatafactor, use_struct_clusters=use_struct_clusters, seq_indices=pred_indices, return_loglikes=True, soft_em=args.softem, post_model=args.postmodel)
-
-        data_pred_cv, sigma_pred_cv = fa_cv.calculate_data_pred()
-        data_pred_cv[data_pred_cv >= data_pred_cv.mean()] = 1
-        err = asarray(data_comp[:, pred_indices] - asarray(data_pred_cv))**2/asarray(sigma_pred_cv)**2
-        """
-        print 'Max'
-        print err.max()
-        print 'Min'
-        print err.min()
-        print 'Sum'
-        print err.sum()
-        print 'Mean'
-        print err.mean()
-        figure(1)
-        plot_mutxpos_image(data_pred_cv, sequence, pred_indices, 0, mut_labels)
-        figure(2)
-        plot_mutxpos_image(data_comp[:, pred_indices], sequence, pred_indices, 0, mut_labels)
-        show()
-        print 'Corrected error'
-        #corr_err = array([((e - err.mean())**4)/(err.std()**2) for e in err]).mean() - 3
-        m =  median(err)
-        corr_err = err[err >= m].sum()
-        print corr_err
-        exit()
-        """
-        cv_errors.append(err.mean())
-    report = open('%s%s_cv_results.txt' % (args.outprefix, args.crossvalidate),'a')
-    report.write('%s\t%s\n' % (array(cv_errors).mean(), '\t'.join(['%s=%s' % (k, v) for k, v in regparams.iteritems()])))
+    if args.crossvalidate == 'measurements':
+        print 'Performing %s-fold cross validation for measurements' % args.cvfold
+        if args.nstructs is None:
+            args.decompose = 'element'
+        report = perform_crossvalidation('measurements')
+    else:
+        print 'Performing %s-fold cross validation for parameters %s' % (args.cvfold, regparams)
+        report = perform_crossvalidation('tuning')
     exit()
 
 
@@ -695,8 +803,6 @@ else:
         chi_sq, rmsea, aic = fa.calculate_fit_statistics()
     if args.mode == 'mc':
         mc.simulate(100, max_iterations=args.refineiter, nsim=args.nsim, return_loglikes=True)
-        matshow(mc.bppms[0])
-        show()
         exit()
 
 
@@ -745,7 +851,7 @@ if not args.worker:
         struct_figs(structures, '')
 
 # If we used motif decomposition, plot the number of motifs used per sequence position
-if args.decompose:
+if args.decompose in ['element', 'motif']:
     figure(1)
     clf()
     title('Number of variables fitted per position\n (number of motifs per position)')

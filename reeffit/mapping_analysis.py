@@ -37,90 +37,40 @@ from pymc import MAP, Model, MvNormal, stochastic, Deterministic, deterministic,
 from cvxopt import solvers
 from scipy import optimize
 from cvxopt import matrix as cvxmat
+"""
+.. module:: mapping_analysis 
+   :platform: Unix
+   :synopsis: Classes and functions for analyzing mapping data
 
-# Homebrew implementation of k-medoids using a pairwise distance matrix.
-# I know this should be imported from some package, but I want to reduce
-# dependencies and would not want to require pycluster just for this
-def _cost(assigned_elems, medoid, distmat):
-    res = 0.
-    for e in assigned_elems:
-        res += distmat[e, medoid]
-    return res/len(assigned_elems)
+.. moduleauthor:: Pablo Cordero <dimenwarper@gmail.com>
+"""
 
-def _assign(elems, medoids):
-    assignments = defaultdict(list)
-    for e in elems:
-        mindist = inf
-        for m in medoids:
-            if distmat[e, m] < mindist:
-                mindist = distmat[e,m]
-                currmed = m
-            assignments[med].append(e)
-    return assignments
+class MappingAnalysisMethod(object):
+    """Base class for methods that model mapping data. 
+    In general, methods that model mapping data have a set of 
+    sequences, a set of structures, and the mapping data reactivities.
+    """
 
-def _kmedoids(distmat, k):
-    elems = range(distmat.shape[0])
-    medoids = sample(elems, k)
-    assignments = _assign(elems, medoids)
-    stopcond = False
-    while not stopcond:
-        stopcond = True
-        newmedoids = [m for m in medoids]
-        currassignments = assignments.copy()
-        for m in medoids:
-            currcost = _cost(assignments[m], m, distmat)
-            currmed = m
-            for e in elems:
-                if e not in medoids:
-                    c = _cost(currassignments[m], e, distmat)
-                    if c < currcost:
-                        currcost = c
-                        currmed = e
-            if currmed != m:
-                newmedoids.remove(m)
-                newmedoids.append(currmed)
-                stopcond = False
-                currassignments = _assign(elems, newmedoids)
-        medoids = newmedoids
-        assignments = currasignments
-    return medoids, assignments
-
-# Here, the data can be one or two-dimensional
-def _structure_likelihood(struct_types, idx, data, Psi, prior_weights=None):
-    if prior_weights == None:
-        prior_weights = ones([data.shape[0]])
-    res = zeros([data.shape[0]])
-    for i in xrange(len(struct_types)):
-        if struct_types[i][idx] == 'u':
-            for j in xrange(data.shape[0]):
-                if data[j,i] > 0:
-                    res[j] += log(SHAPE_unpaired_pdf(data[j,i])) - log(Psi[i,0,0]) + log(prior_weights[j])
-        elif struct_types[i][idx] == 'p':
-            for j in xrange(data.shape[0]):
-                if data[j,i] > 0:
-                    res[j] += log(SHAPE_paired_pdf(data[j,i])) - log(Psi[i,0,0]) + log(prior_weights[j])
-        else:
-            print 'WARNING: Structure type %s not recognized' % struct_type[i][idx]
-            res = None
-    return res
-
-def structure_likelihood(struct_types, idx, data_energies, data_struct_types, struct_data_energies):
-    res = zeros([len(data_energies)])
-    """data_min = min([-d for d in data_energies])
-    for j in xrange(len(data_energies)):
-        res[j] = -data_energies[j]
-        for i in xrange(len(data_struct_types)):
-            if data_struct_types[i][j] != struct_types[i][idx]:
-                res[j] -=  data_min"""
-    for j in xrange(len(data_energies)):
-        res[j] = struct_data_energies[idx][j]
-    return res
-
-
-
-# MappingAnalysisMethod class for mapping analysis
-class MappingAnalysisMethod():
+    # TODO Should probably ma ke wt_indices, mutpos, c_size, and seqpos_range optional arguments
     def __init__(self, data, structures, sequences, energies, wt_indices, mutpos, c_size, seqpos_range):
+        """Constructor that take a mapping reactiviy matrix, a list of structures, sequences, and energies.
+        For mutate-and-map data, this constructor also accepts wild type indices (wt_indices), mutation positions
+        (mutpos), and contact size (c_size) to build the structure-wise contact maps.
+        A range of sequence positions to focus on can also be specificed using seqpos_range (positions outside this
+        range will be ignored in the analysis)
+        
+        Args:
+
+           data (2d numpy array): Mapping reactivity data (rows are experiments, columns are sequence positions)
+           structures (list): List of structures that will be used to model the data
+           sequences (list): List of sequences for the constructs in each experimemt. Must be the same length as the number of rows in data.
+           energies (2d numpy array): Energies of the structures, in the context of each experiment. Number of rows equals the number of rows in data and number of columns is the number of structures.
+           wt_indices (list): List of wild-type indices (for mutate-and-map experiments)
+           mutpos (list): List of lists, each list containing the positions that are mutated in each experiment (for mutate-and-map experiments).
+           c_size (int): Size of 'contact neighborhoods' induced by the mutations (for mutate-and-map experiments)
+           seqpos_range (list): List of two elements that specifies the starting and ending sequence positions to take into account when modeling.
+
+        """
         self.seqpos_range = seqpos_range
         if self.seqpos_range:
             self.data = matrix(data)[:,self.seqpos_range[0]:self.seqpos_range[1]]
@@ -139,6 +89,11 @@ class MappingAnalysisMethod():
         self._data = self.data
 
     def set_structures(self, structures):
+        """Sets the structures and adjusts them to self.seqpos_range as well as calculates 'contact neighborhood' matrices
+
+        Args:
+           structures (list): A list of structures
+        """
         # Get contact sites
         self._origstructures = structures
         self._origstruct_types = utils.get_struct_types(structures)
@@ -178,6 +133,14 @@ class MappingAnalysisMethod():
         self.struct_types = utils.get_struct_types(self.structures)
 
     def _cluster_data(self, cluster_factor):
+        """Clusters the reactivity data matrix. Useful to reduce complexity/redundancy in dataset.
+
+        Args:
+            cluster_factor (int): The clustering factor. The higher clustering factor, the more clusters, the lower, less clusters. Controls the dendogram cutting threshold of the hierarchical clustering used in this function.
+
+        Returns:
+            tuple. The first element is a list of indices that were chosen as the cluster medoids. The second element is a list that maps data row indices to the chosen medoids of the first element.
+        """
         print 'Clustering data'
         distance_mat = scipy.spatial.distance.pdist(self.data, metric='seuclidean')
         Z = sphclust.linkage(distance_mat)
@@ -205,10 +168,32 @@ class MappingAnalysisMethod():
         return chosenindices, bestclusts
 
 class FAMappingAnalysis(MappingAnalysisMethod):
+    """Factor analysis method for modeling mapping data.
+    """
 
     FACTOR_ESTIMATION_METHODS = ['fanalysis', 'hclust']
     MODEL_SELECT_METHODS = ['heuristic', 'bruteforce']
+    #TODO The njobs argument shouldn't be used this way. Instead, it should be an annotation that wraps for loops in parallel jobs using joblib
     def __init__(self, data, structures, sequences, wt_indices=[0], mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, seqpos_range=None, lam_reacts=0, lam_weights=0, lam_mut=0, lam_ridge=0.01, njobs=None):
+        """Constructor that takes data, structures, and sequences, as well as other optional arguments
+
+        Args:
+            data (2d numpy array): The mapping reactivity data. Rows are experiments, columns are sequence positions.
+            structures (list): A list of structures to model the data with.
+            sequences (list): A list of sequences, one corresponding to each experiment.
+
+        Kwargs:
+            wt_indices (list): A list of wild type indices (for mutate-and-map data). Default is [0] (the first row of the data corresponds to the wild type).
+            mutpos (list): A list of lists of positions of the mutations in each experiment (for mutate-and-map data). Default is an empty list (no mutations).
+            concentrations (list): A list of concentrations of chemical (e.g. a small molecule that an RNA binds). Used in conjuntion with kds argument.
+            kds (list):  A list of dissociation constants of the chemical (e..g a small molecule that an RNA binds). Used in conjunction with concentrations argument.
+            c_size (int): The size of the neighborhood of the 'contact map' induced by the mutations (for mutate-and-map experiments).
+            seqpos_range (list): A list of two elements: first is the starting position and last is the ending position of the data to be analyzed.
+            lam_reacts (float): Regularization parameter for coallescing reactivities of structures based on structural similarities.
+            lam_weights (float): Regularization parameter for an L2 penalty that forces equality between inferred weights and those calculated by RNAstructure.
+            lam_ridge (float): Regularization parameter for an L2 (ridge) penalty enforcing smooth sparsity on the weights. Default is 0.
+            lam_mut (float): Regularization parameter for an L2 penalty that forces equality between inferred mutant $\Delta \Delta G$ values and those given by RNAstructure/ViennaRNA.
+            """
         MappingAnalysisMethod.__init__(self, data, structures, sequences, energies, wt_indices, mutpos, c_size, seqpos_range)
         self.njobs = njobs
         self.concentrations = concentrations
@@ -224,15 +209,29 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         self.lam_ridge = lam_ridge
         self.logpriors = 0
         
-        self.use_motif_decomposition = False
+        self.motif_decomposition = 'none'
+    
 
-    def perform_motif_decomposition(self):
+    def perform_motif_decomposition(self, type='motif'):
+        """Perform motif decomposition. Type can be "element" or "motif"
+           
+           Kwargs:
+               type (str): Possible values are 'motif' for decomposing by motif, 'element' for decomposing by secondary structure element (i.e. all helices at position X will have the same reactivity at X, or 'none'/None for no motif decomposition.
+           
+        """
+        if type == 'none' or type is None:
+            print 'Skipping motif decomposition'
+            return
         print 'Starting motif decomposition'
         if self.seqpos_range != None:
             offset = -self.seqpos_range[0]
         else:
             offset = 0
-        self.pos_motif_map, self.motif_ids, self.motif_dist = utils.get_minimal_overlapping_motif_decomposition(self._origstructures, bytype=True, offset=offset)
+        if type == 'motif':
+            bytype = True
+        else:
+            bytype = False
+        self.pos_motif_map, self.motif_ids, self.motif_dist = utils.get_minimal_overlapping_motif_decomposition(self._origstructures, bytype=bytype, offset=offset)
         self.nmotpos = []
         self.posmap = defaultdict(list)
         for i in xrange(self.data.shape[1]):
@@ -242,10 +241,66 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     nmotifs += 1
                     self.posmap[i].append(self.motif_ids[midx])
             self.nmotpos.append(nmotifs)
+
+        self.structs_by_motif = {}
+        for pos__motif_idx, struct_indices in self.pos_motif_map.iteritems():
+            pos, motif_idx = pos__motif_idx
+            for idx in struct_indices:
+                if idx not in self.structs_by_motif.iteritems():
+                   self.structs_by_motif[idx] = set()
+                self.structs_by_motif[idx].add(motif_idx)
+
+        # We want to convert sets to lists for easy indexing
+        for k, v in self.structs_by_motif.iteritems():
+            self.structs_by_motif[k] = list(v)
+
         print 'Number of motifs per position: %s' % self.nmotpos
-        self.use_motif_decomposition = True
+
+    def _initialize_motif_reactivities(self, npos):
+        nmotifs = len(self.motif_ids)
+        E_d = mat(zeros([nmotifs, npos]))
+        sigma_d = mat(zeros([nmotifs, npos]))
+        E_ddT = zeros([nmotifs, nmotifs, npos])
+        E_c = zeros([nmeas, nmotifs, npos])
+        return E_d, E_c, sigma_d, E_ddT, nmotifs
+
+    def _initialize_motif_weights(self, W):
+        nmotifs = len(self.motif_ids)
+        W_motif = mat(zeros([W.shape[0], nmotifs]))
+        for motif_idx, motif_id in enumerate(self.motif_ids):
+            W_motif[:,motif_idx] = W[:,list(self.structs_by_motif[motif_idx])].sum(axis=1)
+        return W_motif
+
+    def _get_motif_contact_sites(self, contact_sites):
+        contact_sites_motif = {}
+        nmeas, npos = contact_sites.values()[0].shape
+        for motif_idx, struct_indices in self.structs_by_motif.iteritems():
+            contact_sites_motif[motif_idx] = zeros([nmeas, npos])
+            struct_idx = struct_indices[0]
+            for i in xrange(contact_sites[struct_idx].shape[1]):
+                if self.motif_ids[motif_idx] in self.posmap[i]:
+                    contact_sites_motif[motif_idx][:,i] = contact_sites[struct_idx][:,i]
+        return contact_sites_motif
+
+
+    def _map_motif_variables_to_structures(self):
+        self.W_motif = self.W
+        self.W_std_motif = self.W_std
+        self.E_d_motif = self.E_d
+        self.E_ddT_motif = self.E_ddT
+        self.E_c_motif = self.E_c
+        self.sigma_d_motif = self.sigma_d
 
     def set_priors_by_rvs(self, unpaired_rvs, paired_rvs):
+        """Sets prior distributions for paired/unpaired reactivities using the data to be modeled. This is done as follows:
+           1. Sets paired data as anything that is below mean of data matrix and unpaired data as the rest.
+           2. Further seeds paired and unpaired data with random variables as sampled by the unpaired_rvs and paired_rvs.
+           3. Uses paired and unpaired data to create an empirical distribution using kernel density estimation with gaussian kernels.
+              This is set as the self.unpaired_pdf and self.paired_pdf functions.
+
+           Returns:
+               Two lists, one with paired and the other with unpaired data that were used to create the prior probability distributions.
+        """
         unpaired_data = self.data[self.data > self.data.mean()].tolist()[0]
         paired_data = self.data[self.data <= self.data.mean()].tolist()[0]
         unpaired_pdf_data = [unpaired_rvs() for i in xrange(len(unpaired_data))]
@@ -257,8 +312,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return unpaired_data, paired_data
 
 
-    # Cluster structures together to get a more coarse-grained estimate
     def set_structure_clusters(self, structure_clusters, struct_medoid_indices, struct_weights_by_clust=[]):
+        """Cluster structures together to get a more coarse-grained estimate
+        """
         self.structure_clusters = structure_clusters
         # It is more convenient internally to have struct_mediod_indices as a list
         # with the same order as self.structure_clusters.key()
@@ -285,8 +341,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             self.struct_weights_by_clust = struct_weights_by_clust
         else:
             self.W, self.struct_weights_by_clust = utils.calculate_weights(self.energies, clusters=cluster_indices)
-
+    
+    # TODO This is deprecated, should extract useful functionality to an external class/function and delete the rest...
     def model_select(self, expected_structures=0, greedy_iter=0, expstruct_estimation='hclust', tol=1e-4, max_iterations=10, prior_swap=True, G_constraint=None, apply_pseudoenergies=True, algorithm='rnastructure', soft_em=False, method='heuristic', post_model=False):
+        """Selects a subset of structures as a model of the data  using an exploratory AICc selection approach.
+        """
         print 'Starting model selection'
         if method not in FAMappingAnalysis.MODEL_SELECT_METHODS:
             raise ValueError('Unrecognized model selection method %s' % method)
@@ -520,30 +579,51 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         selected_structs = subset
             return selected_structs
 
+    # TODO this optimization is useful for other purposes, should extract and wrap it in an external function/class!
     def hard_EM_vars(self, idx, W, Psi_inv, data, struct_types, contact_sites, bp_dist, seq_indices):
-        # This basically solves into a system of linear equations
+        """Calculate expectation maximization variables from the E-step (getting the structure reactivities and variances). This is the hard EM version, returning a MAP estimate for the reactivities.
+        
+            Args:
+                idx (int): The sequence position.
+                W (2d numpy array): The structure weight matrix.
+                Psi_inv (2d numpy array): The inverse of the a priori covariance matrix.
+                data (2d numpy array): The mapping data matrix.
+                struct_types (list): A list of structural types for each structure in this position.
+                contact_sites (list): A list of matrices that contain the contact sites for each structure in this position.
+                bp_dist (2d numpy array): A base-pair distance matrix between all structures.
+                seq_indices (list): List of indices that have the sequence positions to be considered in the analysis.
+
+
+            Returns:
+                tuple. In order:
+                * The column of reactivities inferred for this sequence position
+                * The covariance matrix of the reactivities for this sequence position
+                * The column of standard deviations for this position
+                * The matrices of contact maps inferred for this position
+        """
+        # This basically boils down to a system of linear equations
         # Each entry is either a hidden reactivity or a hidden contact
         # to be solved
         print 'Solving MAP for E-step (hard EM) for sequence position %s' % idx
         ncontacts = 0
         # No Lapacian priors here, we use exponential (for hidden reactivities) and Gaussian (i.e. 2-norm) for contacts for easier calculations
-        contact_prior_factor = 1/2.
-        contact_prior_loc = 0.5
         prior_factors = {}
-        prior_factors['u'] = 0.25
-        prior_factors['p'] = 50.5
-        contact_prior_factor = 1/2.
-        contact_prior_loc = 0.5
+        # TODO These should be exposed as option to choose from rather than hard coded
+        # "Naive" priors
         prior_factors['u'] = 0.5
         prior_factors['p'] = 7.5
         # These are the true priors from the RMDB
         prior_factors['u'] = 2.0
         prior_factors['p'] = 5.5
-        #
+        contact_prior_factor = 0.5
+        contact_prior_loc = 0.5
+        # STRONG priors
+        #prior_factors['u'] = 0.25
+        #prior_factors['p'] = 50.5
         nmeas = W.shape[0]
         nstructs = len(struct_types[0])
         contact_idx_dict = {}
-        if self.use_motif_decomposition:
+        if self.motif_decomposition != 'none':
             nmotifs = 0
             motif_idx_dict = {}
             for midx in xrange(len(self.pos_motif_map)):
@@ -551,17 +631,33 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     motif_idx_dict[nmotifs] = midx
                     nmotifs += 1
             # Some helper functions to make the code more compact
-            def motifidx(midx):
-                return self.pos_motif_map[(seq_indices[idx], motif_idx_dict[midx])]
+            if self.motif_decomposition == 'element':
 
-            def contact_motifidx(midx, j):
-                return [m for m in motifidx(midx) if contact_sites[m][j, idx]]
+                def motifidx(midx):
+                    return self.pos_motif_map[(seq_indices[idx], motif_idx_dict[midx])]
 
-            def check_contact_site(midx, j):
-                for m in motifidx(midx):
-                    if contact_sites[m][j, idx]:
-                        return True
-                return False
+                def contact_motifidx(midx, j):
+                    return [m for m in motifidx(midx) if contact_sites[m][j, idx]]
+
+                def check_contact_site(midx, j):
+                    for m in motifidx(midx):
+                        if contact_sites[m][j, idx]:
+                            return True
+                    return False
+                sum_fun = lambda x: x.sum()
+
+            if self.motif_decomposition == 'motif':
+
+                def motifidx(midx):
+                    return motif_idx_dict[midx]
+
+                def contact_motifidx(midx, j):
+                    return motifidx(midx)
+                
+                def check_contact_site(midx, j):
+                    contact_sites[midx][j, idx]
+
+                sum_fun = lambda x: x
 
             i = nmotifs
             for j in xrange(nmeas):
@@ -586,7 +682,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         A = zeros([dim, dim])
         b = zeros([dim])
         def fill_matrices(A, b, contact_prior):
-            if self.use_motif_decomposition:
+            if self.motif_decomposition != 'none':
                 nstruct_elems = nmotifs
             else:
                 nstruct_elems = nstructs
@@ -594,9 +690,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             for p in xrange(A.shape[0]):
                 for s in xrange(nstruct_elems):
                     if p < nstruct_elems:
-                        if self.use_motif_decomposition:
+                        if self.motif_decomposition != 'none':
                             for j in xrange(nmeas):
-                                A[p,s] += W[j,motifidx(p)].sum()*W[j,motifidx(s)].sum()
+                                A[p,s] += sum_fun(W[j,motifidx(p)])*sum_fun(W[j,motifidx(s)])
                             if p == s:
                                 for s1 in xrange(nstruct_elems):
                                     if s != s1:
@@ -615,18 +711,18 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
                     else:
                         j, s2 = contact_idx_dict[p]
-                        if self.use_motif_decomposition:
-                            A[p,s] = W[j,motifidx(s)].sum()*W[j,motifidx(s2)].sum()
+                        if self.motif_decomposition != 'none':
+                            A[p,s] = sum_fun(W[j,motifidx(s)])*sum_fun(W[j,motifidx(s2)])
                         else:
                             A[p,s] = W[j,s]*W[j,s2]
             for s in xrange(nstruct_elems):
-                if self.use_motif_decomposition:
+                if self.motif_decomposition != 'none':
                     for m in motifidx(s):
                         if struct_types[idx][m] != struct_types[idx][motifidx(s)[0]]:
-                            raise ValueError('MOTIF DECOMPOSITION FAILED! STRUCTURES IN POSITION %s HAVE DIFFERENT STATES!!! %s' % (idx, struct_types[idx]))
+                            raise ValueError('MOTIF DECOMPOSITION FAILED! STRUCTURES IN POSITION %s HAVE DIFFERENT STRUCTURE TYPES!!! %s' % (idx, struct_types[idx]))
                     b[s] = -prior_factors[struct_types[idx][motifidx(s)[0]]]/Psi_inv[0,0]
                     for j in xrange(nmeas):
-                        b[s] += W[j,motifidx(s)].sum()*data[j,idx]
+                        b[s] += sum_fun(W[j,motifidx(s)])*data[j,idx]
                 else:
                     b[s] = -prior_factors[struct_types[idx][s]]/Psi_inv[0,0] + dot(W[:,s], data[:,idx])
             # Then, the contact maps. No Lapacian priors here, we use Gaussian (i.e. 2-norm) priors
@@ -634,18 +730,18 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             for p in xrange(A.shape[0]):
                 for j in xrange(nmeas):
                     for s in xrange(nstruct_elems):
-                        if self.use_motif_decomposition:
+                        if self.motif_decomposition != 'none':
                             if check_contact_site(s, j):
                                 if p < nstruct_elems:
-                                    A[p, contact_idx_dict[(j,s)]] = W[j,contact_motifidx(p, j)].sum()
+                                    A[p, contact_idx_dict[(j,s)]] = sum_fun(W[j,contact_motifidx(p, j)])
                                 else:
                                     j2, s2 = contact_idx_dict[p]
                                     if j == j2:
                                         #A[p,contact_idx_dict[(j,s)]] = W[j,s]
                                         if s == s2:
-                                            A[p,contact_idx_dict[(j,s)]] = (W[j,contact_motifidx(s, j)].sum() + contact_prior_loc)**2 + (contact_prior)/Psi_inv[0,0]
+                                            A[p,contact_idx_dict[(j,s)]] = (sum_fun(W[j,contact_motifidx(s, j)]) + contact_prior_loc)**2 + (contact_prior)/Psi_inv[0,0]
                                         else:
-                                            A[p,contact_idx_dict[(j,s)]] = W[j2,contact_motifidx(s2, j2)].sum()*W[j,contact_motifidx(s, j)].sum()
+                                            A[p,contact_idx_dict[(j,s)]] = sum_fun(W[j2,contact_motifidx(s2, j2)])*sum_fun(W[j,contact_motifidx(s, j)])
 
                         else:
                             if contact_sites[s][j, idx]:
@@ -660,9 +756,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                                             A[p,contact_idx_dict[(j,s)]] = W[j2,s2]*W[j,s]
             for j in xrange(nmeas):
                 for s in xrange(nstruct_elems):
-                    if self.use_motif_decomposition:
+                    if self.motif_decomposition != 'none':
                         if check_contact_site(s, j):
-                            b[contact_idx_dict[(j,s)]] = data[j,idx]*W[j,motifidx(s)].sum()
+                            b[contact_idx_dict[(j,s)]] = sum_fun(data[j,idx]*W[j,motifidx(s)])
                     else:
                         if contact_sites[s][j, idx]:
                             #b[contact_idx_dict[(j,s)]] = -contact_prior_factor/(Psi_inv[0,0]*W[j,s]) + data[j,idx]
@@ -683,7 +779,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         tries = 0
         while not solved:
             solved = True
-            if self.use_motif_decomposition:
+            if self.motif_decomposition != 'none':
                 bounds = [(0.001, data.max())]*nmotifs + [(-10,10)]*(A.shape[0] - nmotifs)
                 x0 = [0.002 if struct_types[idx][motifidx(s)[0]] == 'p' else 1. for s in xrange(nmotifs)] + [0.0 for i in xrange(A.shape[0] - nmotifs)]
             else:
@@ -704,7 +800,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 #x = linalg.solve(A, b)
             except ValueError:
                 solved=False
-            if self.use_motif_decomposition:
+            if self.motif_decomposition != 'none':
                 for s in xrange(nmotifs):
                     if x[s] <= 0.001:
                         E_d__obs[motifidx(s)] = 0.001
@@ -743,7 +839,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 print 'Changing prior factor to %s' % (new_prior_factor)
                 A, b = fill_matrices(A, b, new_prior_factor)
 
-        if self.use_motif_decomposition:
+        if self.motif_decomposition == 'element':
             for s in xrange(nmotifs):
                 for j in xrange(nmeas):
                     for i in motifidx(s):
@@ -757,6 +853,19 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     for i in motifidx(s):
                         if contact_sites[i][j,idx]:
                             E_c__obs[j,i] += x[contact_idx_dict[(j,s)]]
+        elif self.motif_decomposition == 'motif':
+            for s in xrange(nmotifs):
+                for j in xrange(nmeas):
+                    if contact_sites[motifidx(s)][j,idx]:
+                        E_c__obs[j,i] = x[s]
+                    else:
+                        E_c__obs[j,i] = nan
+
+            for s in xrange(nmotifs):
+                for j in xrange(nmeas):
+                    if contact_sites[motifidx(s)][j,idx]:
+                        E_c__obs[j,i] += x[contact_idx_dict[(j,s)]]
+
         else:
             for s in xrange(nstructs):
                 for j in xrange(nmeas):
@@ -771,7 +880,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         E_c__obs[j,s] += x[contact_idx_dict[(j,s)]]
 
         sigma_d__obs = mat(zeros([nstructs]))
-        if self.use_motif_decomposition:
+        if self.motif_decomposition != 'none':
             for s in xrange(nmotifs):
                 sigma_d__obs[0,motifidx(s)] = sqrt(1/(Psi_inv[0,0]*(W[:,motifidx(s)]**2).sum() + 1e-10))
         else:
@@ -783,8 +892,29 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
 
 
-
+    # TODO This is deprecated, basically as well as the hard EM alternative, which is much faster 
     def soft_EM_vars(self, idx, W, Psi_inv, data, struct_types, contact_sites, n, burn, chosenindices, use_struct_clusters):
+        """Calculate expectation maximization variables from the E-step (getting the structure reactivities and variances). This is the soft EM version, returning a MCMC-obtained estimate for the reactivities.
+        
+            Args:
+                idx (int): The sequence position.
+                W (2d numpy array): The structure weight matrix.
+                Psi_inv (2d numpy array): The inverse of the a priori covariance matrix.
+                data (2d numpy array): The mapping data matrix.
+                struct_types (list): A list of structural types for each structure in this position.
+                contact_sites (list): A list of matrices that contain the contact sites for each structure in this position.
+                n (int): Number of MCMC samples
+                burn (int): Number of samples to burn
+                chosenindices (list): Experiment indices to take into consideration.
+                use_structure_clusters (bool): Use or not structure clusters
+
+
+            Returns:
+                tuple. In order:
+                * The column of reactivities inferred for this sequence position
+                * The covariance matrix of the reactivities for this sequence position
+                * The column of standard deviations for this position
+        """
         # idx stands for the index of position
         # If struture weights by cluster were specified, then we do
         # a different prior function
@@ -913,17 +1043,23 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return self.data_pred, self.sigma_pred
 
     def _calculate_chi_sq(self):
+        """Calculates the chi squared statistic given the fit to the data
+        """
         data_pred, sigma_pred = self.calculate_data_pred()
         chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
         return chi_sq
 
 
     def calculate_fit_statistics(self, data_pred=None, sigma_pred=None):
+        """Calculate all fit statistics given the fit to the data.
+            Returns:
+                tuple. In order, chi-squared/Deg. Freedom, AIC, RMSEA
+        """
         if data_pred == None or sigma_pred == None:
             data_pred, sigma_pred = self.calculate_data_pred()
         chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
         df = self.data.size - self.data.shape[1] - 1
-        if self.use_motif_decomposition:
+        if self.motif_decomposition != 'none':
             df += -2*sum(self.nmotpos)
         else:
             df += -self.E_d.size - self.W.size
@@ -935,6 +1071,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return chi_sq/df, rmsea, aic
 
     def correct_scale(self, stype='linear'):
+        """Corrects the scale of the fitted data. Sometimes the fitted model will have 'higher-than-average' reactivities. This procedure
+        corrects this artifact, without affecting the inferred weights.
+            Returns:
+                tuple. In order, the list of correction factors inferred, the new data predicted by the model, and the new errors of the predicted data.
+        """
         data_pred, sigma_pred = self.calculate_data_pred()
         corr_facs = [1]*data_pred.shape[1]
         if stype == 'none':
@@ -959,6 +1100,12 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return corr_facs, self.data_pred, self.sigma_pred
 
     def calculate_missed_predictions(self, sigthresh=0.05, data_pred=None, sigma_pred=None):
+        """Calculates where the data is significantly NOT predicted by the model (i.e. where the model gives less than 0.05 probability
+        to the data). This is useful to find special 'contacts' that were not in the specified variables (e.g. a hidden pseudoknot in
+        mutate-and-map data).
+            Returns:
+               tuple. In order, the indices of the 'missed' predictions, and the values of these missed predictions.
+        """
         missed_vals = zeros(self.data.shape)
         nmeas = self.data.shape[0]
         npos = self.data.shape[1]
@@ -974,8 +1121,18 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     missed_indices.append((i,j))
         return missed_indices, missed_vals
 
-
+    
+    # TODO Should not pass perturbs as by-reference argument, just return it.
     def _back_calculate_perturbations(self, W, energies, perturbs):
+        """Given inferred weights and initial energies, calculates the perturbations needed for the energies to yield the inferred weights.
+            Args:
+                W (2d numpy array): The structure weight matrix.
+                energies (2d numpy array): The initial structure energies (same dimensions as W).
+                perturbs (2d numpy array): The perturbations (passed by reference)
+
+            Returns:
+                The perturbation matrix
+        """
         for j in xrange(W.shape[0]):
             # Index por "pivot" energy, which will be the lowest energy
             # This is totally heuristic, we are assuming that the minimum energy
@@ -989,6 +1146,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
 
     def _assign_EM_structure_variables(self, select_struct_indices, use_struct_clusters):
+        """Given selected structure indices and clusters, initialize and assign all variables to use in the analysis
+        """
         structures = [self.structures[i] for i in select_struct_indices]
         contact_sites = {}
         for s in select_struct_indices:
@@ -1013,6 +1172,32 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return structures, energies, struct_types, contact_sites, concentrations, kds
 
     def _assign_W(self, data, E_d, E_c, E_ddT, E_ddT_inv, data_E_d, Psi, contact_sites, energies, concentrations, kds, G_constraint, nmeas, nstructs, use_struct_clusters, Wupper, Wlower, W_initvals):
+        """Assign the weight matrices given inferred reactivities for the structures and contacts (the M-step). This is currently done in a quadratic program with convex combination constraints solved by CVXOPT.
+
+            Args:
+                data (2d numpy array): The mapping reactivity matrix.
+                E_d (2d numpy array): The matrix containing the structure reactivities.
+                E_c (3d numpy array): The matrix containing the 'contact map' for each structure.
+                E_ddT (3d numpy array): The matrix containing the position-wise covariance reactivity matrices.
+                E_ddT_inv (3d numpy array): Inverted matrices of E_ddT.
+                data_E_d (3d numpy array): The matrix containing the position-wise products of E_d and data matrices.
+                Psi (3d numpy array): The matrix containing the position-wise error covariance matrices.
+                contact_sites (dict): The dictionary of contact site matrices, per structure.
+                energies (2d numpy array): The matrix of initial energies for each structure.
+                concentrations (list): The list of chemical concentrations for each experiment.
+                kds (list): The list of dissociation constants for each experiment.
+                G_constraint (float): The hard energetic constraint not allowing weights to float beyond certain kcals/mol of initial energies.
+                nmeas (int): The number of measurements (experiments).
+                nstructs (int): The number of structures.
+                use_struct_clusters (bool): Indicates if we should use structure clusters or not.
+                Wupper (2d numpy array): The upper bound weight matrix. Used only if G_constraint is not None.
+                Wlower (2d numpy array): The lower bound weight matrix. Used only if G_constraint is not None.
+                W_initvals (2d numpy array): The initial weight matrix
+            
+            Returns:
+                The inferred weight matrix.
+
+        """
         # Constrain the weights to be positive
         # If we were specified energies, we need to apply the lagrange multipliers
         # to constarint weights to be convex combinations and then
@@ -1036,6 +1221,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         if len(energies) > 0:
             print 'Solving weights'
             # ========= Using CVXOPT ====================
+            # Converting to quadratic program
             frame = inspect.currentframe()
             args, _, _, argvals = inspect.getargvalues(frame)
             def par_fun(j, *args):
@@ -1131,6 +1317,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return W
 
     def _calculate_MLE_std(self, W, Psi_inv, E_ddT):
+        """Calculates maximum likelihood estimate of weight error matrix using a Fisher information matrix approach.
+        """
         I_W = zeros(W.shape)
         Psi_inv_vec = array([[Psi_inv[i,0,0] for i in xrange(Psi_inv.shape[0])]])
         for j in xrange(I_W.shape[0]):
@@ -1145,6 +1333,8 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return sqrt(1/I_W)
 
     def _E_d_c_j(self, E_d, E_c, j, contact_sites):
+        """Helper function to multiply E_d and E_c matrices at structure j given the contact sites
+        """
         E_d_c_j = mat(zeros(E_d.shape))
         for s in xrange(E_d.shape[0]):
             for i in xrange(E_d.shape[1]):
@@ -1155,6 +1345,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         return E_d_c_j
 
     def _dot_E_d_i(self, M, E_d_i, E_c_i, i, contact_sites, T=False):
+        """Helper function to calculate the dot product of the E_d matrix at position i with an nmeas x nstructs matrix M given the 
+        contact matrix E_c_i (at position i) and the contact sites
+        """
         # i is the sequence position index
         nmeas = M.shape[0]
         nstructs = E_d_i.shape[0]
@@ -1179,14 +1372,50 @@ class FAMappingAnalysis(MappingAnalysisMethod):
 
         return res
 
-
+    # TODO remove, this is just for testing
     def _get_determinant(self, Psi):
         if linalg.det(Psi) == 0:
             return 1e-100
         else:
             return linalg.det(Psi)
+    
+    # TODO Better documentation! Also, we should deprecate the following options: 
+    # sigma_d0, G_constraint, soft_em, and post_model -- and wrap them up in other functions
+    # We should also break up this method, it's too big!!!
+    def analyze(self, max_iterations=100, tol=1e-2, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, E_d0=None, E_ddT0=None, E_c0=None, sigma_d0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, return_loglikes=False, soft_em=False, post_model=False):
+        """The main method that models the data in terms of the structures.
+            Kargs:
+                max_iterations (int): Maximum number of EM iterations.
+                tol (float): The tolerance difference between the last and current base pair probability matrix of the inferred structure weights before the EM cycle is deemed convergent and terminates.
+                nsim (int): For the soft EM version, number of samples for MCMC.
+                select_struct_indices (list): A list of structure indices to consider for the analysis.
+                W0 (2d numpy array): An initial estimate of the structure weight matrix.
+                Psi0 (3d numpy array): An inital estimate of the error covariance matrices.
+                E_d0 (3d numpy array): An initial estimate of the reactivity matrices.
+                E_ddT0 (3d numpy array): An initial estimate of the covariance reactivity matrices.
+                E_c0 (3d numpy array): An initial estimate of the contact matrices.
+                sigma_d0 (2d numpy array): An initial estimate for the reactivity standard deviations.
+                cluster_data_factor (float): Factor used to cluster the data. Useful for data redundancy elimination.
+                G_constraint (float): Hard energetic constraint to prevent the inferred weights to be beyond a +/- energetic difference of the initial weights.
+                use_struct_clusters (bool): Indicates if we use structure clusters or not.
+                seq_indices (list): Indicates which sequence positions we use for the analysis.
+                return_loglikes (bool): Chooses whether to return the trace of log-likelihoods [TODO: THIS CURRENTLY RETURNS CONVERGENCE VALUES]
+                soft_em (bool): Indicates whether to use soft EM instead of hard EM
+                post_model (bool): Indicates whether to use mapping-directed MFE modeling using the infer reactivities to refine the initial structures.
 
-    def analyze(self, max_iterations=100, tol=1e-4, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, return_loglikes=False, soft_em=False, post_model=False):
+            
+            Returns:
+                tuple. In order:
+                * lhood: Final log-likelihood of the fit.
+                * W: Inferred structure weight matrix.
+                * W_std: Inferred structure weight matrix errors.
+                * Psi: Inferred matrix of error covariance matrices.
+                * E_d: Inferred matrix of structure reactivities.
+                * E_c: Inferred matrix of contact sites reactivity values matrices.
+                * sigma_d: Inferred standard deviation of reactivity matrix.
+                * E_ddT: Inferred matrix of reactivity covariance matrices.
+                * (Optional) post_structures: The structures resulting from posterior mapping directed MFE modeling.
+        """
         # Sometimes, e.g. model selection, we want just to test a subset of structures, we do that via select_struct_indices
         # to indicate the structure indices that we want to try
         if len(select_struct_indices) > 0:
@@ -1227,6 +1456,9 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         else:
             nstructs = len(structures)
 
+        if self.motif_decomposition == 'motif':
+            contact_sites = self._get_motif_contact_sites(contact_sites)
+
         if seq_indices != None:
             data = data[:,seq_indices]
             struct_types = [struct_types[i] for i in seq_indices]
@@ -1246,11 +1478,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         d_i ~ multivariate gamma mixture depending on struct_types
         """
         print 'Initializing weights W and covariance matrix Psi'
+        min_var = 1e-100**(1./nmeas)
         if Psi0 != None:
             Psi = Psi0
         else:
             Psi = zeros([npos, nmeas, nmeas])
-            min_var = 1e-100**(1./nmeas)
             for i in xrange(npos):
                 indices = where(data[:,i] < mean(data[:,i]))[0]
                 if len(indices) < 10:
@@ -1301,14 +1533,24 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         Psi_inv = zeros(Psi.shape)
         for i in xrange(npos):
             Psi_inv[i,:,:] = linalg.inv(Psi[i,:,:])
-        E_d = mat(zeros([nstructs, npos]))
-        E_c = zeros([nmeas, nstructs, npos])
-        sigma_d= mat(zeros([nstructs, npos]))
-        E_ddT_i = mat(zeros([nstructs, nstructs]))
+
+        if self.motif_decomposition in ['none', 'element']:
+            E_d = mat(zeros([nstructs, npos]))
+            E_c = zeros([nmeas, nstructs, npos])
+            sigma_d= mat(zeros([nstructs, npos]))
+            E_ddT = zeros([nstructs, nstructs, npos])
+
+        else:
+            # We have motif decomposition, so adjust variables accordingly
+            E_d, E_c, sigma_d, E_ddT, nmotifs = self._initialize_motif_reactivities(npos)
+            W = self._initialize_motif_weights(W)
+            nstructs = len(self.motif_ids)
+
+        E_ddT_i = mat(zeros(E_ddT.shape[:2]))
+        E_ddT_inv = zeros(E_ddT.shape)
+        data_E_d = zeros(E_c.shape)
+
         data_dataT = zeros([nmeas, nmeas, npos])
-        E_ddT = zeros([nstructs, nstructs, npos])
-        E_ddT_inv = zeros([nstructs, nstructs, npos])
-        data_E_d = zeros([nmeas, nstructs, npos])
 
         old_loglike = -inf
         base_loglike = None
@@ -1359,6 +1601,11 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 sigma_d[:,i] = sigma_d_i.T
                 E_c[:,:,i] = E_c_i
                 E_ddT[:,:,i] = E_ddT_i
+            
+            if E_d0 is not None and t == 0:
+                E_d, E_ddT, E_c, sigma_d = E_d0, E_ddT0, E_c0, sigma_d0
+                for i in xrange(npos):
+                    E_ddT[:,:,i] = dot(E_d[:,i].T, E_d[:,i])
 
             #imshow(E_d, vmax=E_d.mean(), vmin=0, cmap=get_cmap('Greys'))
 
@@ -1413,7 +1660,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             
             # Update stopping criterion
             bppm_new = utils.bpp_matrix_from_structures(self._origstructures, W_new[self.wt_indices[0],:])
-            currdiff = abs(bppm_prev - bppm_new).max()
+            currdiff = abs(bppm_prev[bppm_new != 0] - bppm_new[bppm_new != 0]).mean()
             bppm_prev = bppm_new
             W = W_new
 
@@ -1506,11 +1753,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 t += 1
             #loglikes.append(asscalar(loglike))
             loglikes.append(currdiff)
-            #self.W, self.E_d, self.E_c, self.Psi = W, E_d, E_c, Psi
-            #chi_sq = self._calculate_chi_sq()
             #loglikes.append(asscalar(chi_sq))
-            if currdiff < 0.05:
-                break
             if base_loglike is None and max_iterations != 1:
                 base_loglike = loglike
             else:
@@ -1525,7 +1768,10 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                     E_ddT_opt = E_ddT.copy()
                     adaptive_factor *= 2
 
-                if abs(loglike - old_loglike) < tol or t+1 == max_iterations:
+                if currdiff <= tol:
+                    break
+
+                if t+1 == max_iterations:
                     break
                 if loglike < old_loglike:
                     print 'Warning: Likelihood value is decreasing. This is probably due to:'
@@ -1580,12 +1826,21 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             self.data_clusters = bestclusts
             self.data_cluster_medoids = chosenindices
 
+        # Map final values for weights, reactivities and errors to structure space if we did motif decomposition
+        if self.motif_decomposition == 'motif':
+            self._map_variables_to_structures()
+            # Need to also "restore" the restricted_contact_sites variables to structure, rather than motif space
+            self._restricted_contact_sites = saved_contact_sites
+
+
         if len(self.energies) > 0 or use_struct_clusters:
             self.perturbs = zeros(self.W.shape)
             return lhood, self.W, self.W_std, self.Psi, self.E_d, self.E_c, self.sigma_d, self.E_ddT, self.perturbs, post_structures
         return lhood, self.W, self.W_std, self.Psi, self.E_d, self.E_c, self.sigma_d, self.E_ddT, post_structures
 
 class FullBayesAnalysis(MappingAnalysisMethod):
+    """This method performs a full Bayesian analysis using MCMC over the energies, reactivities, and covariances.
+    """
 
     def __init__(self, data, structures, backend='pickle', dbname='ba_traces.pickle', mutpos=[], concentrations=[], kds=[], energies=[], c_size=3, cutoff=0, njobs=None):
         MappingAnalysisMethod.__init__(self, data, structures, energies, mutpos, c_size, cutoff)
@@ -1744,6 +1999,8 @@ class FullBayesAnalysis(MappingAnalysisMethod):
 
 
 class MCMappingAnalysis(FAMappingAnalysis):
+    """Experimental method, wrap REEFFIT in MCMC procedure?
+    """
 
     def __init__(self, *args, **kwargs):
         FAMappingAnalysis.__init__(self, *args, **kwargs)
@@ -1794,8 +2051,11 @@ class MCMappingAnalysis(FAMappingAnalysis):
                     if bppm[k,l] != 0:
                         self.bppms[j][l,k] = bppm[k,l]
 
-            
+
+# TODO Better logging!
 class MockPrint(object):
+    """For silencing prints
+    """
     def write(self, s):
         pass
 

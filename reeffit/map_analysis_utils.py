@@ -533,7 +533,7 @@ def get_minimal_overlapping_motif_decomposition(structures, bytype=False, offset
             idx = j
     """
 
-def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_noise_cutoff=0, flip=False):
+def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_noise_cutoff=0, flip=False, symmetric=True):
     npos = len(structures[0])
     bppm = zeros([npos, npos])
     if weight_err != None:
@@ -545,8 +545,13 @@ def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_n
                 n2 = n1
                 n1 = ntmp
             bppm[n1,n2] += weights[i]
+            if symmetric:
+                bppm[n2,n1] += weights[i]
             if weight_err != None:
                 bppm_err[n1,n2] += weight_err[i]**2
+                if symmetric:
+                    bppm_err[n2,n1]  += weight_err[i]**2
+
     if weight_err != None:
         bppm_err = sqrt(bppm_err)
         for i in xrange(bppm.shape[0]):
@@ -610,15 +615,19 @@ def combine_weights(w, state_dict):
         new_w.append(weight)
     return array([new_w])
 
-def classify(structures, weights):
-    cw = combine_weights(weights, _collapse_by_similarity(structures))
+def classify_by_weights(weights):
     cat = 'III'
-    for weight in cw.ravel():
+    for weight in weights.ravel():
         if weight > 0.96:
             return 'I'
         if weight > 0.5:
             cat = 'II'
     return cat
+
+
+def classify(structures, weights):
+    cw = combine_weights(weights, _collapse_by_similarity(structures))
+    return classify_by_weights(cw)
 
 def wentropy(weights):
     if len(weights.ravel()) == 1:
@@ -627,3 +636,7 @@ def wentropy(weights):
         return sum([-p*log(p) for p in weights.ravel() if p > 0])
 
 
+
+def calculate_energies_from_weights(weights):
+    pass
+    

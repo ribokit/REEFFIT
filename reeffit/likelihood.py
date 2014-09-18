@@ -13,25 +13,22 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+from matplotlib.pylab import *
 """
-#######
-REEFFIT
-######
+.. module:: likelihood
+   :platform: Unix
+   :synopsis: Log-likelihood functions for models used in the REEFFIT package
 
-REEFFIT (RNA Ensemble Extraction From Footprinting Insights Technique) is a tool for fitting RNA secondary structure ensembles to multi-dimensional chemical mapping, or footprinting, data.
-
-Authors:
-
-    Pablo Cordero G.
-    Rhiju Das
-
-    Departments of Biochemistry and Biomedical Informatics
-
-Please see online documentation at http://reeffit.readthedocs.org
-Source code is available at http://github.com/dimenwarper/reeffit
+.. moduleauthor:: Pablo Cordero <dimenwarper@gmail.com>
 """
-__version__ = '0.5'
 
-__all__ = ['analyze_rdat', 'plot_utils', 'map_analysis_utils', 'mapping_analysis', 'generate_report', 'reactivity_distributions', 'compile_worker_results', 'event_utils', 'likelihood', 'optimization']
-
-
+def factor_analysis_loglike(D_fac, D_obs, W, Psi):
+    res = 0
+    nmeas = D_obs.shape[0]
+    npos = D_obs.shape[1]
+    for i in xrange(npos):
+        D_pred = dot(W, D_fac[:,i])
+        diff = D_obs[:,i] - D_pred
+        res += -0.5*nmeas*Psi[i]
+        res += -0.5*dot(dot(diff.T, diag(Psi[i])), diff)
+    return res

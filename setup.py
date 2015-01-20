@@ -7,5 +7,5 @@ setup(name='REEFFIT',
         author_email='tsuname@stanford.edu',
         url='http://rmdb.stanford.edu/reeffit',
         packages=['reeffit'],
-        install_requires=['numpy', 'scipy', 'joblib', 'pymc', 'matplotlib', 'cvxopt']
+        install_requires=['numpy', 'scipy', 'joblib',  'matplotlib', 'cvxopt']
         )

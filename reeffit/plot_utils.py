@@ -169,11 +169,13 @@ def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, we
                 names[i] = names[i].replace('_', '_{') + '}'
             text(select_struct_coordinates[i,0], select_struct_coordinates[i,1], '$' + names[i] + '$', style='italic')
 
-def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offset=0):
+def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offset=0, hard_thresh=0, signal_to_noise_cutoff=0):
     if weight_err != None:
-        bppm, bppm_err = utils.bpp_matrix_from_structures(structures, weights, weight_err=weight_err, signal_to_noise_cutoff=1)
+        bppm, bppm_err = utils.bpp_matrix_from_structures(structures, weights, weight_err=weight_err, signal_to_noise_cutoff=signal_to_noise_cutoff)
     else:
         bppm = utils.bpp_matrix_from_structures(structures, weights)
+
+    bppm[bppm < hard_thresh] = 0
 
     if ref_weights != None:
         bppm_ref = utils.bpp_matrix_from_structures(structures, ref_weights)
@@ -188,20 +190,27 @@ def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offs
 
     colors = [(cm.jet(i)) for i in xrange(235)]
     bppm_map = matplotlib.colors.LinearSegmentedColormap.from_list('bppm_map', colors)
-    #bppm[bppm <= 0.05] = 0
     imshow(bppm, cmap=bppm_map, interpolation='nearest', vmax=1)
     grid()
+    plot([r[0], r[-1]], [r[0], r[-1]], color='white', linewidth=2)
     colorbar()
     xticks(r, r + offset + 1, rotation=90)
     yticks(r, r + offset + 1)
+    xlim(r[0], r[-1])
+    ylim(r[-1], r[0])
 
-def make_struct_figs(structures, sequence, offset, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
+def make_struct_figs(structures, sequence, offset, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000', no_colors=False, titles=None):
     options = {'drawBases':False, 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset}
     if indices == None:
         indices = range(len(structures))
     for i, s in enumerate(structures):
         print s
-        options['bp'] = rgb2hex(STRUCTURE_COLORS[i])
+        if no_colors:
+            options['bp'] = rgb2hex((0,0,0))
+        else:
+            options['bp'] = rgb2hex(STRUCTURE_COLORS[i])
+        if titles is not None:
+            options['title'] = titles[i]
         varna = VARNA(sequences=[sequence], structures=[ss.SecondaryStructure(dbn=s)])
         if base_annotations == None:
             CMD = varna.render(output=fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)

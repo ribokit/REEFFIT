@@ -20,28 +20,12 @@ from reactivity_distributions import *
 from scipy.stats import stats
 from scipy.spatial.distance import squareform
 from collections import defaultdict
-from bitarray import bitarray
 import rdatkit.secondary_structure as ss
 import scipy.cluster.hierarchy as hcluster
 
 k = 0.0019872041
 T = 310.15 # temperature
 
-
-class Fixed2DBitArray:
-    
-    def __init__(self, dims):
-        self.b = bitarray('0'*dims[0]*dims[1])
-        self.shape = dims
-        self.size = dims[0]*dims[1]
-    
-    def __getitem__(self, key):
-        x, y = key
-        return self.b[x + self.shape[1]*y]
-
-    def __setitem__(self, key, value):
-        x, y = key
-        self.b[x + self.shape[0]*y] = value
 
 
 def _AICc(lhood, nparams, ndata):

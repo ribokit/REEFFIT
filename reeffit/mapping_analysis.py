@@ -1382,7 +1382,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
     # TODO Better documentation! Also, we should deprecate the following options: 
     # sigma_d0, G_constraint, soft_em, and post_model -- and wrap them up in other functions
     # We should also break up this method, it's too big!!!
-    def analyze(self, max_iterations=100, tol=1e-2, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, E_d0=None, E_ddT0=None, E_c0=None, sigma_d0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, return_loglikes=False, soft_em=False, post_model=False):
+    def analyze(self, max_iterations=100, tol=0.05, nsim=1000, select_struct_indices=[], W0=None, Psi0=None, E_d0=None, E_ddT0=None, E_c0=None, sigma_d0=None, cluster_data_factor=None, G_constraint=None, use_struct_clusters=False, seq_indices=None, return_loglikes=False, soft_em=False, post_model=False):
         """The main method that models the data in terms of the structures.
             Kargs:
                 max_iterations (int): Maximum number of EM iterations.

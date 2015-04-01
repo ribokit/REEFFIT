@@ -278,16 +278,30 @@ def mock_data(sequences, structures=None, energy_mu=0.5, energy_sigma=0.5, obs_s
                     for s in xrange(len(structures)):
                         #if weights_noised[j,s] < 0.1:
                         #    continue
-                        if mutpos[j] + k < data.shape[1] and rand() < P_CONTACT:
-                            if structures[s][mutpos[j]+k] == '.':
-                                dd = 0.1*add_local_perturb(data_orig[j,mutpos[j]+k], weights_noised[j,s])
-                            else:
-                                dd = 0.3*add_local_perturb(data_orig[j,mutpos[j]+k], weights_noised[j,s])
-                            if k != 0:
-                                dd *= 0.2
-                            data[j,mutpos[j]+k] += dd
-                        if mutpos[j] in bp_dicts[s] and bp_dicts[s][mutpos[j]] + k < data.shape[1] and rand() < P_CONTACT:
-                            data[j,bp_dicts[s][mutpos[j]] + k] += dd
+                        if type(mutpos[j]) == list:
+                            for m in mutpos[j]:
+                                if m + k < data.shape[1] and rand() < P_CONTACT:
+                                    if structures[s][m+k] == '.':
+                                        dd = 0.1*add_local_perturb(data_orig[j,m+k], weights_noised[j,s])
+                                    else:
+                                        dd = 0.3*add_local_perturb(data_orig[j,m+k], weights_noised[j,s])
+                                    if k != 0:
+                                        dd *= 0.2
+                                    data[j,m+k] += dd
+                                if m in bp_dicts[s] and bp_dicts[s][m] + k < data.shape[1] and rand() < P_CONTACT:
+                                    data[j,bp_dicts[s][m] + k] += dd
+
+                        else:
+                            if mutpos[j] + k < data.shape[1] and rand() < P_CONTACT:
+                                if structures[s][mutpos[j]+k] == '.':
+                                    dd = 0.1*add_local_perturb(data_orig[j,mutpos[j]+k], weights_noised[j,s])
+                                else:
+                                    dd = 0.3*add_local_perturb(data_orig[j,mutpos[j]+k], weights_noised[j,s])
+                                if k != 0:
+                                    dd *= 0.2
+                                data[j,mutpos[j]+k] += dd
+                            if mutpos[j] in bp_dicts[s] and bp_dicts[s][mutpos[j]] + k < data.shape[1] and rand() < P_CONTACT:
+                                data[j,bp_dicts[s][mutpos[j]] + k] += dd
 
             
         print 'Adding observational noise'

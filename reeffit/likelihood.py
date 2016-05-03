@@ -13,6 +13,7 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 from matplotlib.pylab import *
 from map_analysis_utils import get_struct_types
 """
@@ -23,9 +24,10 @@ from map_analysis_utils import get_struct_types
 .. moduleauthor:: Pablo Cordero <dimenwarper@gmail.com>
 """
 
+
 def factor_analysis_loglike(D_obs, D_fac, W, Psi, struct_types, lam_ridge=0.05):
     """Returns the likelihood of a factored model (predicted reactivities + weights + variances and the structure types)
-    given the data. 
+    given the data.
 
         Args:
             D_obs (numpy array, nmeasurements x npositions): The observed data
@@ -37,33 +39,36 @@ def factor_analysis_loglike(D_obs, D_fac, W, Psi, struct_types, lam_ridge=0.05):
         Returns:
             The log-likelihood of the model given the data
     """
+
     res = 0
     nmeas = D_obs.shape[0]
     npos = D_obs.shape[1]
     nstructs = W.shape[1]
     for i in xrange(npos):
-        D_pred = dot(W, D_fac[:,i])
-        diff = D_obs[:,i] - D_pred
-        res += -0.5*nmeas*Psi[i]
-        res += -0.5*dot(dot(diff, diag(array([1./Psi[i]]*nmeas))), diff)
+        D_pred = dot(W, D_fac[:, i])
+        diff = D_obs[:, i] - D_pred
+        res += -0.5 * nmeas * Psi[i]
+        res += -0.5 * dot(dot(diff, diag(array([1. / Psi[i]] * nmeas))), diff)
         for j in xrange(nstructs):
             if struct_types[i][j] == 'u':
-                res += -2.0*D_fac[j,i]
+                res += -2.0 * D_fac[j, i]
             else:
-                res += -5.5*D_fac[j,i]
+                res += -5.5 * D_fac[j, i]
     for j in xrange(nstructs):
-        res += -lam_ridge*(W[j,:]**2).sum()
+        res += -lam_ridge*(W[j, :]**2).sum()
 
     return res
+
 
 def test_factor_analysis_loglike():
     structs = ['....(((...)))', '(((.....)))..']
     struct_types = get_struct_types(structs)
-    D_obs = abs(randn(13,13))*2.0
-    W = abs(randn(13,2))
-    D_fac = abs(randn(2,13))*2.0
-    Psi = [0.5]*13
+    D_obs = abs(randn(13, 13)) * 2.0
+    W = abs(randn(13, 2))
+    D_fac = abs(randn(2, 13)) * 2.0
+    Psi = [0.5] * 13
     print factor_analysis_loglike(D_obs, D_fac, W, Psi, struct_types)
+
 
 if __name__ == '__main__':
     test_factor_analysis_loglike()

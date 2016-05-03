@@ -13,9 +13,11 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-from scipy.stats import gamma, laplace, expon
+
 from numpy.random import rand
 import os
+from scipy.stats import gamma, laplace, expon
+
 
 distfile = open(os.environ['REEFFIT_HOME'] + '/reactivity_distributions/SHAPEdist.txt')
 distfile.readline()
@@ -51,22 +53,27 @@ SHAPE_contacts_diff_sample = laplace(loc=contact_diff_params[0], scale=contact_d
 SHAPE_all_pdf = expon(loc=allparams[0], scale=allparams[1]).pdf
 SHAPE_all_sample = expon(loc=allparams[0], scale=allparams[1]).rvs
 
+
 def _sample_from_mixture(p1, p2, w1, w2):
     if rand() > w1:
         return p1.rvs()
     else:
         return p2.rvs()
 
+
 def SHAPE_unpaired_sample():
     return _sample_from_mixture(ugamma1, ugamma2, uparams[5], uparams[6])
+
 
 def SHAPE_paired_sample():
     return _sample_from_mixture(pgamma1, pgamma2, pparams[5], pparams[6])
 
+
 def SHAPE_unpaired_pdf(x):
-    return uparams[5]*ugamma1.pdf(x) + uparams[6]*ugamma2.pdf(x)
+    return uparams[5] * ugamma1.pdf(x) + uparams[6] * ugamma2.pdf(x)
+
 
 def SHAPE_paired_pdf(x):
-    return pparams[5]*pgamma1.pdf(x) + pparams[6]*pgamma2.pdf(x)
+    return pparams[5] * pgamma1.pdf(x) + pparams[6] * pgamma2.pdf(x)
 
 

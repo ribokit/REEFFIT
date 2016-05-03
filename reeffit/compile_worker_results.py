@@ -13,15 +13,18 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 import argparse
-import pdb
+from itertools import chain
+import os
+# import pdb
+
 import matplotlib
 from matplotlib.colors import rgb2hex
-from scipy.stats.mstats import mquantiles
-import os
 from matplotlib.pylab import *
+from scipy.stats.mstats import mquantiles
+
 from event_utils import AnnoteFinder
-from itertools import chain
 
 parser = argparse.ArgumentParser()
 parser.add_argument('inprefix', type=str)
@@ -34,12 +37,7 @@ args = parser.parse_args()
 
 
 opt_aic = inf
-opt_structs = []
-chi_sq_traces = []
-aic_traces = []
-struct_traces = []
-weight_traces = []
-nrejected = []
+opt_structs, chi_sq_traces, aic_traces, struct_traces, weight_traces, nrejected = [], [], [], [], [], []
 i = 0
 for fname in os.listdir(args.inprefix):
     if 'results.txt' not in fname:
@@ -47,10 +45,7 @@ for fname in os.listdir(args.inprefix):
     print 'Doing %s' % fname
     wfile = open(args.inprefix + '/' + fname)
     if args.method == 'mc':
-        struct_trace = []
-        chi_sq_trace = []
-        aic_trace = []
-        weight_trace = []
+        struct_trace, chi_sq_trace, aic_trace, weight_trace = [], [], [], []
         for line in wfile.readlines():
             lhood, chi_sq, rmsea, aic, structstr, weights = line.strip().split('\t')
             structs = structstr.split(',')
@@ -64,12 +59,10 @@ for fname in os.listdir(args.inprefix):
             if aic < opt_aic:
                 opt_structs = structs
                 opt_aic = aic
-    elif args. method == 'mcmc':
+
+    elif args.method == 'mcmc':
         nrejected.append(0)
-        struct_trace = []
-        chi_sq_trace = []
-        aic_trace = []
-        weight_trace = []
+        struct_trace, chi_sq_trace, aic_trace, weight_trace = [], [], [], []
         first = True
         for line in wfile.readlines():
             lhood, chi_sq, rmsea, aic, structstr = line.strip().split('\t')
@@ -104,7 +97,6 @@ for fname in os.listdir(args.inprefix):
     i += 1
 
 
-
 if args.method == 'mcmc':
     for i, aic_trace in enumerate(aic_traces):
         struct_trace = struct_traces[i]
@@ -114,7 +106,7 @@ if args.method == 'mcmc':
             chainfile.write('%s\t%s\n' % (aic, ','.join(structs)))
         chainfile.close()
 
-            
+
 print 'Finished compiling traces'
 if args.method == 'mcmc':
     print 'Number of rejected samples per trace: %s' % nrejected
@@ -144,7 +136,7 @@ for aic_trace in aic_traces:
 xlabel('Sample')
 ylabel('$AIC$')
 ylim([xmin, xmax])
-cutoff  = mquantiles(all_aic_traces, prob=[args.quantile])
+cutoff = mquantiles(all_aic_traces, prob=[args.quantile])
 ylim([xmin - 100, cutoff])
 savefig('%s%s_aic_traces.png' % (args.outprefix, args.method), dpi=200)
 close()
@@ -161,19 +153,19 @@ close()
 
 
 
-if args.trueensemble != None:
+if args.trueensemble is not None:
     def struct_distance(s1, s2):
         res = 0.
         for i in xrange(len(s1)):
             if s1[i] != s2[i]:
                 res += 1
-        return res/len(s1)
+        return res / len(s1)
 
     true_structs = [l.strip() for l in args.trueensemble.readlines() if l[0] != '#']
-    sdistance_traces = [] 
+    sdistance_traces = []
     for struct_trace in struct_traces:
         sdistance_trace = []
-        matches = [False]*len(true_structs)
+        matches = [False] * len(true_structs)
         for structs in struct_trace:
             currdist = 0.
             for s in structs:
@@ -224,10 +216,3 @@ if args.trueensemble != None:
     show()
 
 
-
-
-
-
-
-
-    

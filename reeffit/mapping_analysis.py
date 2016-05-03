@@ -19,7 +19,7 @@ import pymc
 import joblib
 import sys
 import map_analysis_utils as utils
-import rdatkit.secondary_structure as ss
+import rdatkit.secstr as ss
 from rdatkit import mapping
 import scipy.cluster.hierarchy as sphclust
 import pymc.graph
@@ -223,7 +223,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             print 'Skipping motif decomposition'
             return
         print 'Starting motif decomposition'
-        if self.seqpos_range != None:
+        if self.seqpos_range is not None:
             offset = -self.seqpos_range[0]
         else:
             offset = 0
@@ -1055,7 +1055,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             Returns:
                 tuple. In order, chi-squared/Deg. Freedom, AIC, RMSEA
         """
-        if data_pred == None or sigma_pred == None:
+        if data_pred is None or sigma_pred is None:
             data_pred, sigma_pred = self.calculate_data_pred()
         chi_sq = ((asarray(self.data) - asarray(data_pred))**2/asarray(sigma_pred)**2).sum()
         df = self.data.size - self.data.shape[1] - 1
@@ -1110,7 +1110,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         nmeas = self.data.shape[0]
         npos = self.data.shape[1]
         missed_indices = []
-        if data_pred == None or sigma_pred == None:
+        if data_pred is None or sigma_pred is None:
             data_pred, sigma_pred = self.calculate_data_pred()
         for i in xrange(nmeas):
             for j in xrange(npos):
@@ -1266,7 +1266,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 sol = sol/sol.sum()
                 return sol.T
 
-            if self.njobs != None:
+            if self.njobs is not None:
                 sys.modules[__name__].par_fun = par_fun
                 resvecs = joblib.Parallel(n_jobs=self.njobs)(joblib.delayed(par_fun)(j, *argvals) for j in xrange(nmeas))
                 for j, sol in enumerate(resvecs):
@@ -1275,7 +1275,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 for j in xrange(nmeas):
                     W[j,:] = par_fun(j, *argvals)
             # ========= End using CVXOPT ================
-            if G_constraint != None:
+            if G_constraint is not None:
                 # Constrain by using G_constraint
                 for m in xrange(nmeas):
                     for p in xrange(nstructs):
@@ -1459,7 +1459,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         if self.motif_decomposition == 'motif':
             contact_sites = self._get_motif_contact_sites(contact_sites)
 
-        if seq_indices != None:
+        if seq_indices is not None:
             data = data[:,seq_indices]
             struct_types = [struct_types[i] for i in seq_indices]
             for s in xrange(len(structures)):
@@ -1479,7 +1479,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         """
         print 'Initializing weights W and covariance matrix Psi'
         min_var = 1e-100**(1./nmeas)
-        if Psi0 != None:
+        if Psi0 is not None:
             Psi = Psi0
         else:
             Psi = zeros([npos, nmeas, nmeas])
@@ -1488,7 +1488,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                 if len(indices) < 10:
                     indices = range(nmeas)
                 Psi[i,:,:] = diag([max((data[indices,i].std())**2, min_var)]*nmeas)
-        if W0 != None:
+        if W0 is not None:
             W = W0
             self.perturbs = zeros([nmeas, nstructs])
         else:
@@ -1514,7 +1514,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
         Wupper = zeros(W.shape)
         Wlower = zeros(W.shape)
 
-        if G_constraint != None:
+        if G_constraint is not None:
             for m in xrange(nmeas):
                 for p in xrange(nstructs):
                     Wupper[m,p] = W[m,p]*exp(G_constraint/(utils.k*utils.T))
@@ -1573,7 +1573,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             # E-step
             loglike = -npos*nmeas/2.*log(2.*pi)
             if not soft_em:
-                if self.njobs != None:
+                if self.njobs is not None:
                     def par_fun(i):
                         return self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist, seq_indices)
                     sys.modules[__name__].par_fun = par_fun
@@ -1585,7 +1585,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
                         restuples.append(self.hard_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, bp_dist, seq_indices))
 
             else:
-                if self.njobs != None:
+                if self.njobs is not None:
                     def par_fun(i):
                         return self.soft_EM_vars(i, W, Psi_inv[i,:,:], data, struct_types, contact_sites, nsim, nsim/5, measindices, use_struct_clusters)
                     sys.modules[__name__].par_fun = par_fun
@@ -1610,7 +1610,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             #imshow(E_d, vmax=E_d.mean(), vmin=0, cmap=get_cmap('Greys'))
 
 
-            if self.njobs != None:
+            if self.njobs is not None:
                 def par_fun(i):
                     B = self._dot_E_d_i(data[:,i], E_d[:,i], E_c[:,:,i], i, contact_sites, T=True)
                     C = -dot(dot(data[:,i].T, Psi_inv[i,:,:]), data[:,i])
@@ -1667,7 +1667,7 @@ class FAMappingAnalysis(MappingAnalysisMethod):
             # Now get covariance matrix
             data_pred = zeros([W.shape[0], E_d.shape[1]])
 
-            if self.njobs != None:
+            if self.njobs is not None:
                 def par_fun(i):
                     return self._dot_E_d_i(W, E_d[:,i], E_c[:,:,i], i, contact_sites).T
                 sys.modules[__name__].par_fun = par_fun

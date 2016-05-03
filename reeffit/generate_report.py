@@ -19,7 +19,7 @@ from matplotlib.pylab import *
 import mapping_analysis
 from map_analysis_utils import *
 from plot_utils import *
-from rdatkit.datahandlers import *
+from rdatkit.handler import *
 from collections import defaultdict
 import os
 import argparse

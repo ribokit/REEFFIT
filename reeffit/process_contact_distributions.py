@@ -1,6 +1,6 @@
 from matplotlib.pylab import *
-from rdatkit.datahandlers import RDATFile
-import rdatkit.secondary_structure as ss
+from rdatkit.handler import RDATFile
+import rdatkit.secstr as ss
 import os
 import map_analysis_utils as utils
 import scipy.stats as stats

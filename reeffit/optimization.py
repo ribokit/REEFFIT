@@ -88,7 +88,7 @@ class BoltzmannFactorizationWeightSGD(object):
     def fit(self, D_obs, D_fac, Psi, factors_in_measurement, energies_0=None, max_iter=100, feature_to_factor_dict=None):
         if feature_mappings is None:
             # Trivial feature mappings are one feature per factor
-            feature_to_factor_dict = dict[(i,i) for i in xrange(D_fac.shape[0])])
+            feature_to_factor_dict = dict([(i,i) for i in xrange(D_fac.shape[0])])
         factor_to_feature_dict = self._get_factor_to_feature_dict(feature_to_factor_dict)
         # do the stochastic gradient descent
         finished = False

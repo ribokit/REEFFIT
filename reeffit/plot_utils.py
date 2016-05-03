@@ -17,8 +17,8 @@ from matplotlib.pylab import *
 import matplotlib.pylab as pl
 import matplotlib
 from matplotlib.colors import rgb2hex
-import rdatkit.secondary_structure as ss
-from rdatkit.view import VARNA
+import rdatkit.secstr as ss
+from rdatkit.varna import VARNA
 from matplotlib.patches import Rectangle
 import map_analysis_utils as utils
 import pdb
@@ -27,14 +27,14 @@ import os
 STRUCTURE_COLORS = [get_cmap('Paired')(i*50) for i in xrange(100)]
 def plot_mutxpos_image(d, sequence, seqpos, offset, mut_labels, cmap=get_cmap('Greys'), vmin=0, vmax=None, missed_indices=None, contact_sites=None, structure_colors=STRUCTURE_COLORS, weights=None, aspect='auto'):
     ax = subplot(111)
-    if vmax == None:
+    if vmax is None:
         vmax = d.mean()
     ax.imshow(d, cmap=get_cmap('Greys'), vmin=0, vmax=vmax, aspect=aspect, interpolation='nearest')
-    if missed_indices != None:
+    if missed_indices is not None:
         for x, y in missed_indices:
             ax.add_artist(Rectangle(xy=(y-0.5, x-0.5), facecolor='none', edgecolor='r', linewidth=0.25, width=1, height=1))
-    if contact_sites != None:
-        if weights == None:
+    if contact_sites is not None:
+        if weights is None:
             weights = ones(d.shape[0], len(contact_sites))
         for k, v in contact_sites.iteritems():
             for x, y in zip(*where( v != 0)):
@@ -44,19 +44,19 @@ def plot_mutxpos_image(d, sequence, seqpos, offset, mut_labels, cmap=get_cmap('G
     return ax
 
 def expected_reactivity_plot(react, struct, yerr=None, ymin=0, ymax=5, seq_indices=None):
-    if seq_indices == None:
+    if seq_indices is None:
         seq_indices = [i for i in xrange(len(react))]
     binarized_react = [1 if x == '.' else 0 for i, x in enumerate(struct[:len(react)]) if i in seq_indices]
     plot(1+arange(len(binarized_react)), binarized_react, linewidth=2, c='r')
     bar(0.5+arange(len(react)), react, linewidth=0, width=1, color='gray')
-    if yerr != None:
+    if yerr is not None:
         errorbar(1+arange(len(react)), react, yerr=yerr, linewidth=2, c='k')
     ylim(0,5)
     xlim(1,len(react))
 
 def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLORS, W_ref=None, W_samples=None, idx=-1, assignments=None, medoids=None):
     ax = subplot(111)
-    if assignments == None:
+    if assignments is None:
         _W = W
         _W_err = W_err
         _W_ref = W_ref
@@ -65,7 +65,7 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
     else:
         _W = zeros([W.shape[0], len(medoids)])
         _W_err = zeros([W.shape[0], len(medoids)])
-        if W_ref != None:
+        if W_ref is not None:
             _W_ref = zeros([W.shape[0], len(medoids)])
         else:
             _W_ref = None
@@ -81,10 +81,10 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
 
             _W[:,i] = W[:,si].sum(axis=1)
 
-            if _W_ref != None:
+            if _W_ref is not None:
                 _W_ref[:,i] = W_ref[:,si].sum(axis=1)
 
-            if W_samples != None:
+            if W_samples is not None:
                 """
                 a = ones(len(si))
                 for j in xrange(_W_err.shape[0]):
@@ -104,7 +104,7 @@ def weights_by_mutant_plot(W, W_err, mut_labels, structure_colors=STRUCTURE_COLO
 
     for j in weight_range:
         ax.errorbar(arange(W.shape[0])+1, _W[:,j], yerr=_W_err[:,j], linewidth=3, label='structure %s ' % (struct_indices[j]), color=structure_colors[j])
-        if _W_ref != None:
+        if _W_ref is not None:
             ax.errorbar(arange(_W_ref.shape[0])+1, _W_ref[:,j], linestyle='--', linewidth=3, label='reference %s ' % (struct_indices[j]), color=structure_colors[j])
     ylim(0,1)
     xlim(0, _W.shape[0]+1)
@@ -140,7 +140,7 @@ def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, we
     
     all_sizes = 50
     medoid_sizes = 100
-    if weights == None:
+    if weights is None:
         all_structure_colors = [cluster_colors[struct_to_clust[i]] for i in all_struct_indices]
         medoid_colors = [cluster_colors[struct_to_clust[i]] for i in medoids]
         linewidth = 1
@@ -163,19 +163,19 @@ def PCA_structure_plot(structures, assignments, medoids, colorbyweight=False, we
 
     scatter(all_struct_coordinates[:,0], all_struct_coordinates[:,1], c=all_structure_colors, alpha=0.6, linewidth=linewidth, s=all_sizes)
     scatter(select_struct_coordinates[:,0], select_struct_coordinates[:,1], c=medoid_colors, linewidth=2, s=medoid_sizes)
-    if names != None:
+    if names is not None:
         for i, m in enumerate(medoids):
             if '_' in names[i]:
                 names[i] = names[i].replace('_', '_{') + '}'
             text(select_struct_coordinates[i,0], select_struct_coordinates[i,1], '$' + names[i] + '$', style='italic')
 
 def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offset=0):
-    if weight_err != None:
+    if weight_err is not None:
         bppm, bppm_err = utils.bpp_matrix_from_structures(structures, weights, weight_err=weight_err, signal_to_noise_cutoff=1)
     else:
         bppm = utils.bpp_matrix_from_structures(structures, weights)
 
-    if ref_weights != None:
+    if ref_weights is not None:
         bppm_ref = utils.bpp_matrix_from_structures(structures, ref_weights)
         for i in xrange(bppm_ref.shape[0]):
             for j in xrange(i+1, bppm_ref.shape[1]):
@@ -197,18 +197,18 @@ def bpp_matrix_plot(structures, weights, ref_weights=None, weight_err=None, offs
 
 def make_struct_figs(structures, sequence, offset, fprefix, indices=None, base_annotations=None, helix_function=lambda x,y:x, helix_fractions=None, annotation_color='#FF0000'):
     options = {'drawBases':False, 'fillBases':False, 'resolution':'10.0', 'flat':True, 'offset':offset}
-    if indices == None:
+    if indices is None:
         indices = range(len(structures))
     for i, s in enumerate(structures):
         print s
         options['bp'] = rgb2hex(STRUCTURE_COLORS[i])
         varna = VARNA(sequences=[sequence], structures=[ss.SecondaryStructure(dbn=s)])
-        if base_annotations == None:
+        if base_annotations is None:
             CMD = varna.render(output=fprefix + 'structure%s.svg' % indices[i], annotation_by_helix=True, helix_function=helix_function, cmd_options=options)
         else:
             varna.annotation_font_size = 13
             varna.annotation_color = annotation_color
-            if helix_fractions == None:
+            if helix_fractions is None:
                 helix_frac_annotations = ''
                 base_weight_annotations = varna._get_base_annotation_string([base_annotations[i]], annotation_by_helix=True, helix_function=helix_function)
             else:

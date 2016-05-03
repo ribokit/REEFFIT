@@ -20,7 +20,7 @@ from reactivity_distributions import *
 from scipy.stats import stats
 from scipy.spatial.distance import squareform
 from collections import defaultdict
-import rdatkit.secondary_structure as ss
+import rdatkit.secstr as ss
 import scipy.cluster.hierarchy as hcluster
 
 k = 0.0019872041

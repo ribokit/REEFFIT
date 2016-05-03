@@ -20,8 +20,8 @@ matplotlib.use('Agg')
 import os
 import pickle
 from matplotlib.pylab import *
-from rdatkit.datahandlers import RDATFile
-import rdatkit.secondary_structure as ss
+from rdatkit.handler import RDATFile
+import rdatkit.secstr as ss
 from rdatkit.mapping import MappingData
 from plot_utils import *
 from map_analysis_utils import *
@@ -579,12 +579,12 @@ else:
     else:
         print 'Getting suboptimal ensemble for ALL mutants'
         #structures, deltas = ss.subopt(sequence[seqpos_start:seqpos_end], nstructs=args.nsubopt, algorithm=args.priorweights)
-        structures, deltas = ss.subopt(sequence, nstructs=args.nsubopt, algorithm=args.priorweights)
+        structures, deltas = ss.subopt(sequence, N_structs=args.nsubopt, algorithm=args.priorweights)
         structures = list(set([s.dbn for s in structures]))
         for i, m in enumerate(mutants):
             print 'Doing mutant %s: %s' % (i, m)
             #mut_structures, deltas = ss.subopt(m[seqpos_start:seqpos_end], nstructs=args.nsubopt, algorithm=args.priorweights)
-            mut_structures, deltas = ss.subopt(m, nstructs=args.nsubopt, algorithm=args.priorweights)
+            mut_structures, deltas = ss.subopt(m, N_structs=args.nsubopt, algorithm=args.priorweights)
             mut_structures = list(set([s.dbn for s in mut_structures if s.dbn not in structures]))
             if len(mut_structures) > 0:
                 print 'Found new structures: %s' % mut_structures

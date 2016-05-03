@@ -25,7 +25,7 @@ To install REEFFIT, follow these steps:
 
 * In your profile (e.g. .bashrc), include an environment variable REEFFIT_HOME that points to the REEFFIT home directory. For example: ``export REEFFIT_HOME=/path/to/reeffit``
 
-* Add the ``REEFFIT_HOME/bin`` directory to your path: ``export PATH=$PATH:REEFFIT_HOME/bin``
+* Add the ``REEFFIT_HOME/bin`` directory to your path: ``export PATH=$PATH:$REEFFIT_HOME/bin``
 
 * Check that REEFFIT is correctly installed. Execute the reeffit command by running ``reeffit`` in your shell.
 

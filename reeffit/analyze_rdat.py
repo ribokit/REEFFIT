@@ -33,6 +33,8 @@ parser.add_argument('--clusterfile', default=None, type=argparse.FileType('r'), 
 parser.add_argument('--medoidfile', default=None, type=argparse.FileType('r'), help='File specifying the medoid structures of each cluster.')
 parser.add_argument('--structset', default=None, type=str, help='Subset of structures in the specified structfile to use in the analysis. Each subset is identified by a "header" specified after a hash (#) preceding the set of structures. This option will search all headers for structset and analyze the data with those structures. Used in worker mode.')
 parser.add_argument('--structlabelfile', default=None, type=argparse.FileType('r'), help='File specifying labels (names) for the structures.')
+parser.add_argument('--famapfile', default=None, type=argparse.FileType('r'), help='Factor analysis mapping result dump')
+parser.add_argument('--mcmapfile', default=None, type=argparse.FileType('r'), help='MCMC mapping analysis result dump')
 parser.add_argument('--mode', default='factor', type=str)
 
 # Pre-processing options
@@ -571,6 +573,12 @@ else:
             structures.extend(mut_structures)
         structures = list(set(structures))
 
+        f = open('%s_structures.txt', 'w')
+        for struct in structures:
+            f.write(struct + '\n')
+        f.close()
+
+
 print 'Structures to consider are:'
 for i, s in enumerate(structures):
     print '%s:%s' % (i, s)
@@ -626,10 +634,18 @@ if args.nstructs is not None:
     energies = energies[:, sorted_indices[:args.nstructs]]
     structures = [structures[i] for i in sorted_indices[:args.nstructs]]
 
+if args.famapfile is not None:
+    fa = pickle.load(args.famapfile)
+else:
+    fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
+    pickle.dump(fa, open('%s_famap.pickle' % args.outprefix, 'w'))
 
-fa = mapping_analysis.FAMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
 if args.mode == 'mc':
-    mc = mapping_analysis.MCMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
+    if args.mcmapfile is not None:
+        mc = pickle.load(args.mcmapfile)
+    else:
+        mc = mapping_analysis.MCMappingAnalysis(data, structures, mutants, mutpos=mutpos_cutoff, concentrations=concentrations, kds=kds, seqpos_range=seqpos_range, c_size=args.csize, njobs=args.njobs, lam_reacts=args.lamreacts, lam_weights=args.lamweights, lam_mut=args.lammut, lam_ridge=args.lamridge)
+        pickle.dump(mc, open('%s_mcmap.pickle' % args.outprefix, 'w'))
 
 if args.decompose in ['element', 'motif']:
     fa.perform_motif_decomposition(type=args.decompose)

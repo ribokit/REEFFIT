@@ -529,6 +529,7 @@ def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_n
     bppm = zeros([npos, npos])
     if weight_err is not None:
         bppm_err = zeros([npos, npos])
+
     for i, s in enumerate(structures):
         for n1, n2 in ss.SecondaryStructure(dbn=s).base_pairs():
             if flip:
@@ -547,7 +548,7 @@ def bpp_matrix_from_structures(structures, weights, weight_err=None, signal_to_n
         bppm_err = sqrt(bppm_err)
         for i in xrange(bppm.shape[0]):
             for j in xrange(bppm.shape[1]):
-                if bppm[i, j] != 0 and bppm_err[i, j] != 0 and (bppm[i, j]/bppm_err[i, j] < signal_to_noise_cutoff):
+                if bppm[i, j] != 0 and bppm_err[i, j] != 0 and (bppm[i, j] / bppm_err[i, j] < signal_to_noise_cutoff):
                     bppm[i, j] = 0
         return bppm, bppm_err
     else:

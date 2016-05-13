@@ -24,7 +24,7 @@ parser.add_argument('prefix', type=str)
 args = parser.parse_args()
 
 result_dir = args.resultdir + '/'
-template_dir = os.environ['REEFFIT_HOME'] + '/svg_templates/'
+template_dir = os.environ['REEFFIT_HOME'] + '/reeffit/svg_templates/'
 
 
 def fill_in_template(data_dict, templatefile, svgfile):

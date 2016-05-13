@@ -4,7 +4,7 @@ import os
 
 sys.path.insert(0, os.path.abspath("../../"))
 
-from primerize import __version__
+from reeffit import __version__
 
 extensions = [
     'sphinx.ext.autodoc',
@@ -22,7 +22,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'REEFFIT'
-copyright = u'2013-%s Leland Stanford Junior University. All Rights Reserved' % date.today().year
+copyright = u'2013-%s Pablo Cordero G., Leland Stanford Junior University. All Rights Reserved' % date.today().year
 author = u'Pablo Cordero, Rhiju Das'
 language = 'en'
 
@@ -64,7 +64,7 @@ html_theme = 'ribokit-Sphinx-theme'
 html_theme_path = ['_theme']
 html_theme_options = {
     'description': 'RNA Ensemble Extraction From Footprinting Insights Technique',
-    'author': author.split(',')[0].strip(),
+    'author': 'Siqi Tian',
     'github_repo': 'DasLab/REEFFIT',
     'ga_tracker': 'UA-36037648-4'
 }

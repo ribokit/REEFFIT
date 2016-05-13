@@ -1,7 +1,7 @@
 Technical Summary
 --------------------
 
-``REEFFIT`` core framework is essentially non-negative factorization with a Gaussian error model (i.e. a form of factor analysis). In this framework, the data is modeled as a linear combination of positive hidden variables:
+**REEFFIT** core framework is essentially non-negative factorization with a Gaussian error model (i.e. a form of factor analysis). In this framework, the data is modeled as a linear combination of positive hidden variables:
 
 .. math:: D_{obs} = WD + \epsilon 
 
@@ -11,5 +11,5 @@ In standard factor analysis, the hidden variables are normally distributed, and 
 
 To simplify things, we use chemical reactivity distributions obtained from the `RMDB database <http://rmdb.stanford.edu>`_ splitted into two classes: distributions for unpaired and paired nucleotides. Because these priors on :math:`D` are far from normal, we cannot use the standard factor analysis EM-algorithm solutions; in fact, the likelihood function derived from the E-step cannot be calculated analytically. Instead, we either use Bayesian inference (Markov Chain Monte Carlo simulations) or maximum a posteriori estimation to solve the optimization problem. The M-step is much simpler, as it can be solved as a quadratic optimization problem with convex constraints (the weights need to be positive and sum to one). 
 
-For error estimation, we use bootstrapping, although ``REEFFIT`` is able to calculate stnadard errors withouth bootstrapping as well.
+For error estimation, we use bootstrapping, although **REEFFIT** is able to calculate stnadard errors withouth bootstrapping as well.
 

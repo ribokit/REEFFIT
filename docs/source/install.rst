@@ -45,4 +45,4 @@ For system-wide installation, you must have permissions and use with ``sudo``.
 
     export PATH=$PATH:$REEFFIT_HOME/bin
 
-* Check that ``REEFFIT`` is correctly installed. Execute the ``reeffit`` command by running ``reeffit -h`` in your shell.
+* Check that ``REEFFIT`` is correctly installed. Execute the **REEFFIT** command by running ``reeffit -h`` in your shell.

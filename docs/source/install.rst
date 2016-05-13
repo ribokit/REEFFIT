@@ -31,11 +31,18 @@ For system-wide installation, you must have permissions and use with ``sudo``.
 
     rdatkit >= 1.0.4
 
-* In your profile (e.g. ``.bashrc)``, include an environment variable ``REEFFIT_HOME`` that points to the REEFFIT home directory. Also add the ``REEFFIT_HOME/bin`` directory to your path:
+* Note that you should have ``RDATKit`` installed and properly set up as well (see `hitrace/RDATKit <https://github.com/hitrace/rdatkit>`_).
+
+* In your profile (e.g. ``.bashrc``), include an environment variable ``REEFFIT_HOME`` that points to the REEFFIT home directory, e.g.:
 
 .. code-block:: bash
 
     export REEFFIT_HOME=/path/to/REEFFIT
+
+* Be sure to add the ``REEFFIT_HOME/bin`` directory to your path. Similarly in `~/.bashrc` or `~/.bash_profile`, include:
+
+.. code-block:: bash
+
     export PATH=$PATH:$REEFFIT_HOME/bin
 
-* Check that ``REEFFIT`` is correctly installed. Execute the reeffit command by running ``reeffit -h`` in your shell.
+* Check that ``REEFFIT`` is correctly installed. Execute the ``reeffit`` command by running ``reeffit -h`` in your shell.

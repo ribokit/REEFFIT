@@ -1,34 +1,6 @@
 Getting started with REEFFIT
 ==========================================
 
-Requirements
--------------------
-
-REEFFIT is written in python (routinely tested in 2.7.3) and requires the following python packages:
-
-* Scipy (0.9 or greater)
-* Numpy (1.6.1 or greater)
-* Matplotlib (1.1.1 or greater)
-* PyMC (2.2 or greater)
-* joblib (0.5.4 or higher)
-* CVXOPT (dev. releast)
-* RDATkit (dev. version, see https://github.com/hitrace/rdatkit)
-
-It is recommended that these dependencies (except joblib and RDATkit) be obtained via the enthought package (via canopy).
-
-Installation
--------------------
-
-To install REEFFIT, follow these steps:
-
-* Go to REEFFIT's home directory and type: ``python setup.py install``
-
-* In your profile (e.g. .bashrc), include an environment variable REEFFIT_HOME that points to the REEFFIT home directory. For example: ``export REEFFIT_HOME=/path/to/reeffit``
-
-* Add the ``REEFFIT_HOME/bin`` directory to your path: ``export PATH=$PATH:$REEFFIT_HOME/bin``
-
-* Check that REEFFIT is correctly installed. Execute the reeffit command by running ``reeffit`` in your shell.
-
 
 Running REEFFIT
 ------------------

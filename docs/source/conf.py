@@ -63,7 +63,7 @@ html_style = []
 html_theme = 'ribokit-Sphinx-theme'
 html_theme_path = ['_theme']
 html_theme_options = {
-    'description': 'RNA Ensemble Extraction From Footprinting Insights Technique',
+    'description': '<u>R</u>NA <u>E</u>nsemble <u>E</u>xtraction <u>F</u>rom <u>F</u>ootprinting <u>I</u>nsights <u>T</u>echnique',
     'author': 'Siqi Tian',
     'github_repo': 'DasLab/REEFFIT',
     'ga_tracker': 'UA-36037648-4'

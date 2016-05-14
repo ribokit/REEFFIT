@@ -1,0 +1,231 @@
+
+
+
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    
+    <title>Installation &mdash; REEFFIT0.6.2 : RNA Ensemble Extraction From Footprinting Insights Technique | RiboKit</title>
+    
+
+    
+      <link rel="shortcut icon" href="_static/ribokit.gif"/>
+    
+
+    <link rel="stylesheet" href="_static/css/styles.css" type="text/css" />
+    <link rel="stylesheet" href="_static/css/github-dark.css" type="text/css" />
+
+    
+      
+    
+
+    
+    
+      <link rel="top" title="REEFFIT0.6.2 : RNA Ensemble Extraction From Footprinting Insights Technique" href="index.html"/>
+          <link rel="next" title="Running REEFFIT" href="run.html"/>
+          <link rel="prev" title="Technical Summary" href="technical.html"/> 
+
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.3/jquery.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/modernizr/2.8.3/modernizr.min.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <script type="text/javascript">
+      (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+      (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+      m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+      })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+      ga('create', 'UA-36037648-4', 'auto');
+      ga('send', 'pageview');
+    </script>
+  </head>
+
+  <body>
+    <header>
+    <h1>
+        <a href="/">RiboKit</a> 
+        
+        : <a href="index.html">REEFFIT</a>
+        
+    </h1>
+    <p>RNA Ensemble Extraction From Footprinting Insights Technique</p>
+</header>
+    <div id="banner">
+  <div class="banner-inner">
+    <span id="logo"><span class="octicon octicon-mark-github"></span></span>
+
+    
+      <a href="https://github.com/DasLab/REEFFIT" target="_blank" class="button fork"><strong>View On GitHub</strong></a>
+    
+
+    
+  <form id="rtd-search-form" class="search-form" action="search.html" method="get">
+    <input type="text" name="q" class="search-box" placeholder="Search for Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+
+    
+      
+      
+        <div class="version"><span>0.6.2</span></div>
+      
+    
+
+    
+      <div class="downloads">
+        <span style="text-transform: none; font-size: 120%;"><u>install</u></span>
+        <ul>
+          
+            <li><a href="index.html" class="button">&#x21E7;</a></li>
+          
+          
+            <li><a href="technical.html" class="button">&#x21E6;</a></li>
+          
+          
+            <li><a href="run.html" class="button">&#x21E8;</a></li>
+          
+        </ul>
+      </div>
+  
+  </div>
+</div>
+
+
+    <div class="wrapper">
+      <nav>
+    <ul style="margin-bottom:0;">
+        <li class="tag-h1"><a href="index.html">REEFFIT Documentation</a></li>
+    </ul>
+    
+        
+        
+            <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="technical.html">Technical Summary</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="run.html">Running REEFFIT</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">LICENSE</a></li>
+</ul>
+
+        
+    
+</nav>
+      <section>
+      
+  <div class="section" id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
+<p><strong>REEFFIT</strong> can be downloaded for non-commercial use at the <a class="reference external" href="https://rmdb.stanford.edu/tools/">RMDB</a>. Commercial users, please <a class="reference external" href="https://rmdb.stanford.edu/help/about/#contact">contact us</a>.</p>
+<ul class="simple">
+<li>Download the zip or tar file of the repository and unpack; or</li>
+</ul>
+<div class="highlight-bash"><div class="highlight"><pre><span></span>git clone https://github.com/DasLab/REEFFIT.git
+</pre></div>
+</div>
+<ul class="simple">
+<li>To install <code class="docutils literal"><span class="pre">REEFFIT</span></code>, simply:</li>
+</ul>
+<div class="highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span> path/to/REEFFIT/
+python setup.py install
+</pre></div>
+</div>
+<p>For system-wide installation, you must have permissions and use with <code class="docutils literal"><span class="pre">sudo</span></code>.</p>
+<p><code class="docutils literal"><span class="pre">REEFFIT</span></code> requires the following <em>Python</em> packages as dependencies, all of which can be installed through <a class="reference external" href="https://pip.pypa.io/">pip</a>:</p>
+<div class="highlight-js"><div class="highlight"><pre><span></span><span class="nx">cvxopt</span> <span class="o">&gt;=</span> <span class="mf">1.1</span><span class="p">.</span><span class="mi">6</span>
+<span class="nx">joblib</span> <span class="o">&gt;=</span> <span class="mf">0.5</span><span class="p">.</span><span class="mi">4</span>
+<span class="nx">matplotlib</span> <span class="o">&gt;=</span> <span class="mf">1.1</span><span class="p">.</span><span class="mi">1</span>
+<span class="nx">numpy</span> <span class="o">&gt;=</span> <span class="mf">1.6</span><span class="p">.</span><span class="mi">1</span>
+<span class="nx">scipy</span> <span class="o">&gt;=</span> <span class="mf">0.9</span><span class="p">.</span><span class="mi">0</span>
+<span class="nx">pymc</span> <span class="o">&gt;=</span> <span class="mf">2.2</span>
+
+<span class="nx">rdatkit</span> <span class="o">&gt;=</span> <span class="mf">1.0</span><span class="p">.</span><span class="mi">4</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li>Note that you should have <code class="docutils literal"><span class="pre">RDATKit</span></code> installed and properly set up as well (see <a class="reference external" href="https://github.com/hitrace/rdatkit">hitrace/RDATKit</a>).</li>
+<li>In your profile (e.g. <code class="docutils literal"><span class="pre">.bashrc</span></code>), include an environment variable <code class="docutils literal"><span class="pre">REEFFIT_HOME</span></code> that points to the REEFFIT home directory, e.g.:</li>
+</ul>
+<div class="highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span> <span class="nv">REEFFIT_HOME</span><span class="o">=</span>/path/to/REEFFIT
+</pre></div>
+</div>
+<ul class="simple">
+<li>Be sure to add the <code class="docutils literal"><span class="pre">REEFFIT_HOME/bin</span></code> directory to your path. Similarly in <cite>~/.bashrc</cite> or <cite>~/.bash_profile</cite>, include:</li>
+</ul>
+<div class="highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span> <span class="nv">PATH</span><span class="o">=</span><span class="nv">$PATH</span>:<span class="nv">$REEFFIT_HOME</span>/bin
+</pre></div>
+</div>
+<ul class="simple">
+<li>Check that <code class="docutils literal"><span class="pre">REEFFIT</span></code> is correctly installed. Execute the <strong>REEFFIT</strong> command by running <code class="docutils literal"><span class="pre">reeffit</span> <span class="pre">-h</span></code> in your shell.</li>
+</ul>
+</div>
+
+
+      </section>
+    </div>
+
+    <p class="wrapper">
+      <small>Built with</small>
+      <a href="http://sphinx-doc.org/" target="_blank">Sphinx</a>
+      <small>using a</small>
+      <a href="https://github.com/t47io/ribokit-Sphinx-theme" target="_blank">RiboKit Theme</a>
+      <small>. Hosted on</small> GitHub Pages.
+    </p>
+
+    <p class="wrapper">
+      <small>
+        &copy; Copyright 2013-2016 Pablo Cordero G., Leland Stanford Junior University. All Rights Reserved.
+      </small>
+    </p>
+
+    <p class="wrapper">
+      
+      <small>Last updated on</small> May 13, 2016.
+      
+    </p>
+
+    <footer>
+  <p style="margin:0;">
+      <small>Project maintained by</small>
+      <br/>
+      <a href="https://github.com/DasLab"><b>Das Lab</b></a>&nbsp;
+      
+        <br/>
+        <small>Page created by</small>
+        <br/>
+        <span style="color: #39c;"><i>Siqi Tian</i></span>&nbsp;
+      
+  </p>
+</footer>
+
+    
+      <script type="text/javascript">
+          var DOCUMENTATION_OPTIONS = {
+              URL_ROOT:'./',
+              VERSION:'0.6.2',
+              COLLAPSE_INDEX:false,
+              FILE_SUFFIX:'.html',
+              HAS_SOURCE:  true
+          };
+      </script>
+        
+        
+        
+          <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+        
+        
+          <script type="text/javascript" src="_static/doctools.js"></script>
+        
+        
+          <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+        
+    
+
+    <script type="text/javascript" src="_static/js/main.js"></script>
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+
+     
+  </body>
+</html>

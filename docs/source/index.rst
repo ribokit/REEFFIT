@@ -28,6 +28,14 @@ Reference
 
 ----------
 
+Related Packages
+----------------------------
+
+* `HiTRACE <https://hitrace.github.io/HiTRACE/>`_
+* `RDATKit <https://hitrace.github.io/RDATKit/>`_
+
+----------
+
 Developed by **Das lab**, `Leland Stanford Junior University`.
 
 README by `t47 <http://t47.io/>`_, *May 2016*.

@@ -1232,3 +1232,21 @@ div.wrapper h1 {
   border-bottom: solid 3px #ffcc00;
 }
 
+div.admonition.admonition-todo > p.first,
+div.admonition.seealso > p.first,
+div.admonition.warning > p.first,
+div.admonition.note > p.first {
+  font-weight: bold;
+  padding: 5px;
+}
+div.admonition.admonition-todo > p.first,
+div.admonition.warning > p.first {
+  background-color: #fadbd8;
+  border-top: solid 5px #E74C3C;
+}
+div.admonition.seealso > p.first,
+div.admonition.note > p.first {
+  background-color: #d4f2e9;
+  border-top: solid 5px #29be92;
+}
+

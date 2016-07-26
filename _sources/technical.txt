@@ -1,7 +1,7 @@
 Technical Summary
 --------------------
 
-**REEFFIT** core framework is essentially non-negative factorization with a Gaussian error model (i.e. a form of factor analysis). In this framework, the data is modeled as a linear combination of positive hidden variables:
+**REEFFIT** core framework is essentially non-negative factorization with a Gaussian error model (i.e. a form of factor analysis). In this framework, the data are modeled as a linear combination of positive hidden variables:
 
 .. math:: D_{obs} = WD + \epsilon 
 

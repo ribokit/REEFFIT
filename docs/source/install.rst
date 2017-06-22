@@ -31,7 +31,7 @@ For system-wide installation, you must have permissions and use with ``sudo``.
 
     rdatkit >= 1.0.4
 
-* Note that you should have ``RDATKit`` installed and properly set up as well (see `hitrace/RDATKit <https://github.com/hitrace/rdatkit>`_).
+* Note that you should have ``RDATKit`` installed and properly set up as well (see `ribokit/RDATKit <https://github.com/ribokit/RDATKit>`_).
 
 * In your profile (e.g. ``.bashrc``), include an environment variable ``REEFFIT_HOME`` that points to the REEFFIT home directory, e.g.:
 

@@ -24,6 +24,9 @@
 
     
     
+          <link rel="index" title="Index"
+                href="genindex.html"/>
+          <link rel="search" title="Search" href="search.html"/>
       <link rel="top" title="REEFFIT 0.6.2 : RNA Ensemble Extraction From Footprinting Insights Technique" href="index.html"/>
           <link rel="next" title="LICENSE" href="license.html"/>
           <link rel="prev" title="Installation" href="install.html"/> 
@@ -195,7 +198,7 @@ Therefore, to obtain the structural ensemble, the reeffit command would be:</p>
 <p>To achieve this, we use the <code class="docutils literal"><span class="pre">--preparebootstrap</span></code> option. To set up the scripts, we have to divide the number of bootstraps into the number of worker scripts that are going to be running simultaneously using the <code class="docutils literal"><span class="pre">--nworkers</span></code> and <code class="docutils literal"><span class="pre">--ntasks</span></code> options. For example, to set up 100 bootstraps for 5 workers, we would use the options <code class="docutils literal"><span class="pre">--nworkers=5</span> <span class="pre">--ntasks=20</span></code>.</p>
 <p>It is important to note that every option passed to the command will be passed to the worker scripts.</p>
 <p>Assuming that we have the structural ensemble in <code class="docutils literal"><span class="pre">OUTPUT_DIR/all_structures.txt</span></code> and we want to activate motif decomposition, the REEFFIT command for this task would be:</p>
-<div class="highlight-bash"><div class="highlight"><pre><span></span>reeffit RDAT_FILE OUTPUT_DIR --structfile<span class="o">=</span>OUTPUT_DIR/all_structures.txt --decompose --preparebootstrap --nworkers<span class="o">=</span><span class="m">5</span> --ntasks<span class="o">=</span>20
+<div class="highlight-bash"><div class="highlight"><pre><span></span>reeffit RDAT_FILE OUTPUT_DIR --structfile<span class="o">=</span>OUTPUT_DIR/all_structures.txt --decompose --preparebootstrap --nworkers<span class="o">=</span><span class="m">5</span> --ntasks<span class="o">=</span><span class="m">20</span>
 </pre></div>
 </div>
 <p>This will write several <code class="docutils literal"><span class="pre">bootstrap_workerN.sh</span></code> scripts to the output directory, as well as a <code class="docutils literal"><span class="pre">master_bootstrap_script.sh</span></code></p>
@@ -240,13 +243,13 @@ Therefore, to obtain the structural ensemble, the reeffit command would be:</p>
 
     <p class="wrapper">
       <small>
-        &copy; Copyright 2013-2016 Pablo Cordero G., Leland Stanford Junior University. All Rights Reserved.
+        &copy; Copyright 2013-2017 Pablo Cordero G., Leland Stanford Junior University. All Rights Reserved.
       </small>
     </p>
 
     <p class="wrapper">
       
-      <small>Last updated on</small> Jul 26, 2016.
+      <small>Last updated on</small> Jun 21, 2017.
       
     </p>
 
@@ -285,7 +288,7 @@ Therefore, to obtain the structural ensemble, the reeffit command would be:</p>
           <script type="text/javascript" src="_static/doctools.js"></script>
         
         
-          <script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+          <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.0/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
         
     
 

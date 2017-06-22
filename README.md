@@ -26,7 +26,7 @@ pymc >= 2.2
 rdatkit >= 1.0.4
 ```
 
-* Note that you should have `RDATKit` installed and properly set up as well (see https://github.com/hitrace/rdatkit)
+* Note that you should have `RDATKit` installed and properly set up as well (see https://github.com/ribokit/RDATKit)
 
 * In your profile (e.g. `~/.bashrc`), include an environment variable `REEFFIT_HOME` that points to the **REEFFIT** home directory, e.g.:
 ```bash
@@ -42,7 +42,7 @@ export PATH=$PATH:$REEFFIT_HOME/bin
 
 ## Documentation
 
-Documentation is available at https://reeffit.readthedocs.org/.
+Documentation is available at https://reeffit.readthedocs.org/ or https://daslab.github.io/REEFFIT/.
 
 ## License
 
@@ -54,8 +54,9 @@ Copyright &copy; of **REEFFIT** _Source Code_ is described in [LICENSE.md](https
 >[Rich structure landscapes in both natural and artificial RNAs revealed by mutate-and-map analysis.](http://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1004473)<br/>
 >*PLOS Computational Biology* **11 (11)**: e1004473.
 
-<br/>
+<hr/>
+
 Developed by **Das lab**, _Leland Stanford Junior University_.
-<br/>
-README by [**t47**](http://t47.io/), *May 2016*.
+
+README by [**t47**](https://t47.io/), *May 2016*.
 

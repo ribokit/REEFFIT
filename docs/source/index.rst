@@ -31,10 +31,18 @@ Reference
 Related Packages
 ----------------------------
 
-* `HiTRACE <https://ribokit.github.io/HiTRACE/>`_
-* `RDATKit <https://ribokit.github.io/RDATKit/>`_
+* `HiTRACE </HiTRACE/>`_
+* `RDATKit </RDATKit/>`_
 
 ----------
+
+Workflows
+----------------------------
+
+* `I think my RNA has interesting alternative states </workflows/alternative_states/>`_
+
+----------
+
 
 Developed by **Das lab**, `Leland Stanford Junior University`.
 

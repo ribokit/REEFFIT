@@ -11,7 +11,7 @@ setup(
     author='Pablo Cordero, Rhiju Das',
     author_email='rhiju@stanford.edu',
 
-    url='https://github.com/daslab/reeffit/',
+    url='https://github.com/ribokit/reeffit/',
     license='https://rmdb.stanford.edu/reeffit',
 
     packages=find_packages(),

@@ -65,7 +65,7 @@ html_theme_path = ['_theme']
 html_theme_options = {
     'description': '<u>R</u>NA <u>E</u>nsemble <u>E</u>xtraction <u>F</u>rom <u>F</u>ootprinting <u>I</u>nsights <u>T</u>echnique',
     'author': 'Siqi Tian',
-    'github_repo': 'DasLab/REEFFIT',
+    'github_repo': 'ribokit/REEFFIT',
     'ga_tracker': 'UA-36037648-4'
 }
 html_additional_pages = {'404': '404.html'}

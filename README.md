@@ -42,11 +42,11 @@ export PATH=$PATH:$REEFFIT_HOME/bin
 
 ## Documentation
 
-Documentation is available at https://reeffit.readthedocs.org/ or https://daslab.github.io/REEFFIT/.
+Documentation is available at https://reeffit.readthedocs.org/ or https://ribokit.github.io/REEFFIT/.
 
 ## License
 
-Copyright &copy; of **REEFFIT** _Source Code_ is described in [LICENSE.md](https://github.com/daslab/reeffit/blob/master/LICENSE.md).
+Copyright &copy; of **REEFFIT** _Source Code_ is described in [LICENSE.md](https://github.com/ribokit/REEFFIT/blob/master/LICENSE.md).
 
 ## Reference
 

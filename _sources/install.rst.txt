@@ -7,7 +7,7 @@ Installation
 
 .. code-block:: bash
 
-    git clone https://github.com/DasLab/REEFFIT.git
+    git clone https://github.com/ribokit/REEFFIT.git
 
 * To install ``REEFFIT``, simply:
 
